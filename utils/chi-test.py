@@ -10,6 +10,7 @@ import logging
 import argparse
 import collections
 import scipy.stats
+from matplotlib import pyplot
 
 ARG_DEFAULTS = {'min_obs':20, 'min_value':5, 'output':'stats',
                 'log_file':sys.stderr, 'volume':logging.ERROR}
@@ -32,6 +33,11 @@ def make_argparser():
          'expected and observed distributions. The output is '
          'tab-delimited, with three columns: # reads in family, # of reads the errors occurred in, '
          'expected number of errors occurring in this number of reads, observed number.')
+  parser.add_argument('-p', '--plots', dest='output', action='store_const', const='plots',
+    help='Use matplotlib to plot the distributions.')
+  parser.add_argument('-o', '--plots-outpath',
+    help='Instead of displaying the plots live, save them to image files. Use this path base to '
+         'create the filenames, with the format "[plots-outpath][famsize].png"')
   parser.add_argument('-l', '--log', action='store_true',
     help='Log10 transform the chi statistics and p-values.')
   parser.add_argument('-L', '--log-file', type=argparse.FileType('w'),
@@ -58,46 +64,32 @@ def main(argv):
   for famsize, exp_freqs in dists.items():
     # Calculate the observed and expected distributions.
     total_errors = totals[famsize]
-    observations = counts[famsize]
-    exp_counts = []
-    obs_counts = []
-    for i, exp_freq in enumerate(exp_freqs):
-      repeat_num = i+1
-      obs_count = float(observations[repeat_num])
-      if obs_count < args.min_value:
-        logging.info('Observed value {} in family {} is below --min-value {}.'
-                     .format(int(obs_count), famsize, args.min_value))
-        continue
-      exp_count = exp_freq * total_errors
-      if exp_count < args.min_value:
-        logging.info('Expected value {:5.2f} in family {} is below --min-value {}.'
-                     .format(exp_count, famsize, args.min_value))
-        continue
-      obs_counts.append(obs_count)
-      exp_counts.append(exp_count)
-    # Check filters.
-    if len(exp_counts) <= 1:
-      logging.info('{} in family {} is too few frequencies'.format(len(exp_freqs), famsize))
-      continue
-    if total_errors < args.min_obs:
-      logging.info('{} in family {} is too few errors to test against.'
-                   .format(total_errors, famsize))
-      continue
-    # Do the Chi Square test.
-    chi = scipy.stats.chisquare(obs_counts, exp_counts)
-    if args.log:
-      chi_stat = math.log(chi.statistic, 10)
-      chi_p = math.log(chi.pvalue, 10)
-    else:
-      chi_stat = chi.statistic
-      chi_p = chi.pvalue
+    exp_counts, obs_counts, exp_counts_filt, obs_counts_filt = calc_obs_exp(famsize,
+                                                                            total_errors,
+                                                                            counts,
+                                                                            exp_freqs,
+                                                                            args.min_value)
     if args.output == 'dists':
       i = 0
       for exp, obs in zip(exp_counts, obs_counts):
         i += 1
-        print('{}\t{}\t{}\t{}'.format(famsize, i, smart_round(exp), smart_round(obs)))
+        print('{}\t{}\t{}\t{}'.format(famsize, i, sig_round(exp), sig_round(obs)))
+      continue
+    # Is there enough data for a valid chi square test?
+    if passes_thresholds(exp_counts, total_errors, args.min_obs, famsize):
+      chi = scipy.stats.chisquare(exp_counts_filt, obs_counts_filt)
+      if args.log:
+        chi_stat, chi_p = log_transform((chi.statistic, chi.pvalue), default=float('nan'))
+      else:
+        chi_stat = chi.statistic
+        chi_p = chi.pvalue
     else:
-      print('{}\t{}\t{:8.5f}\t{}'.format(famsize, total_errors, chi_stat, chi_p))
+      chi = None
+    if args.output == 'stats':
+      if chi is not None:
+        print('{}\t{}\t{:8.5f}\t{}'.format(famsize, total_errors, chi_stat, chi_p))
+    elif args.output == 'plots':
+      plot_dists(exp_counts, obs_counts, famsize, chi, args.log, args.plots_outpath)
 
 
 def read_expected(expected_file):
@@ -144,12 +136,55 @@ def calc_freqs(counts, totals):
   return freqs
 
 
+def calc_obs_exp(famsize, total_errors, counts, exp_freqs, min_value=5):
+  observations = counts[famsize]
+  exp_counts = []
+  obs_counts = []
+  exp_counts_filt = []
+  obs_counts_filt = []
+  for i, exp_freq in enumerate(exp_freqs):
+    repeat_num = i+1
+    obs_count = float(observations[repeat_num])
+    exp_count = exp_freq * total_errors
+    obs_counts.append(obs_count)
+    exp_counts.append(exp_count)
+    if obs_count < min_value:
+      logging.info('Observed value {} in family {} is below --min-value {}.'
+                   .format(int(obs_count), famsize, min_value))
+      continue
+    if exp_count < min_value:
+      logging.info('Expected value {:5.2f} in family {} is below --min-value {}.'
+                   .format(exp_count, famsize, min_value))
+      continue
+    exp_counts_filt.append(obs_count)
+    obs_counts_filt.append(exp_count)
+  return exp_counts, obs_counts, exp_counts_filt, obs_counts_filt
+
+
+def passes_thresholds(exp_counts, total_errors, min_obs, famsize):
+  if len(exp_counts) <= 1:
+    logging.info('{} in family {} is too few frequencies'.format(len(exp_counts), famsize))
+    return False
+  if total_errors < min_obs:
+    logging.info('{} in family {} is too few errors to test against.'
+                 .format(total_errors, famsize))
+    return False
+  return True
+
+
 def tone_down_logger():
   """Change the logging level names from all-caps to capitalized lowercase.
   E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
   for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
     level_name = logging.getLevelName(level)
     logging.addLevelName(level, level_name.capitalize())
+
+
+def chisquare(obs_dist, exp_dist):
+  chi = 0
+  for obs, exp in zip(obs_dist, exp_dist):
+    chi += ((obs-exp)**2)/exp
+  return chi
 
 
 def fail(message):
@@ -160,18 +195,94 @@ def fail(message):
     raise Exception('Unrecoverable error')
 
 
-def smart_round(x):
-  if x == 0:
-    return x
-  power = int(math.log(x, 10))
-  if x < 1:
-    power -= 1
-  decimals = max(2-power, 0)
-  rounded = round(x, decimals)
-  if decimals == 0:
-    return int(rounded)
+def sig_round(n, figs=3):
+  """Round a number "n" to "figs" significant figures."""
+  if n == 0 or math.isnan(n) or math.isinf(n):
+    return n
+  elif n < 0:
+    n = -n
+    sign = -1
   else:
-    return rounded
+    sign = 1
+  magnitude = int(math.floor(math.log10(n)))
+  return sign * round(n, figs - 1 - magnitude)
+
+
+def plot_dists(exp_counts, obs_counts, famsize, chi, log, plots_outpath):
+  figure = pyplot.figure(dpi=120, figsize=(6,4.5))
+  axis = figure.add_subplot(111)
+  if log:
+    exp_counts = log_transform(exp_counts)
+    obs_counts = log_transform(obs_counts)
+  x_values = list(range(1, len(exp_counts)+1))
+  axis.scatter(x_values, exp_counts, s=10, color='blue', label='expected')
+  axis.scatter(x_values, obs_counts, s=10, color='red', label='observed')
+  set_plot_display(axis, x_values, exp_counts, obs_counts, famsize, chi, log)
+  show_plot(plots_outpath, famsize)
+
+
+def log_transform(raw, default=-1):
+  log = []
+  for num in raw:
+    if num == 0:
+      log.append(default)
+    else:
+      log.append(math.log(num, 10))
+  return log
+
+
+def set_plot_display(axis, x_values, exp_counts, obs_counts, famsize, chi, log):
+  # Set the limits of the graph.
+  MARGIN_SIZE = 0.05
+  X_MAX = 5
+  Y_MAX = 4
+  X_MIN = 0
+  if log:
+    Y_MIN = -2
+  else:
+    Y_MIN = 0
+  x_max = max(x_values[-1], X_MAX)
+  x_margin = x_max * MARGIN_SIZE
+  pyplot.xlim(X_MIN-x_margin, x_max+x_margin)
+  y_max = max(max(exp_counts + obs_counts), Y_MAX)
+  y_margin = y_max * MARGIN_SIZE
+  pyplot.ylim(Y_MIN-y_margin, y_max+y_margin)
+  # Draw a grid line across the 0 of both axes.
+  axis.set_xticks([0], minor=True)
+  if log:
+    axis.set_yticks([-1], minor=True)
+    axis.set_yticklabels(['Zero   '], minor=True)
+  else:
+    axis.set_yticks([0], minor=True)
+  pyplot.grid(axis='both', which='minor')
+  # Set the figure text.
+  pyplot.legend(loc='upper right')
+  pyplot.xlabel('x (# of reads errors occur in)')
+  if log:
+    pyplot.ylabel('Log10(Number of errors)')
+  else:
+    pyplot.ylabel('Number of errors')
+  title = 'Families with {} reads'.format(famsize)
+  if chi is None:
+    title += '\nno chi squared test'
+  else:
+    title += '\nchi: {}, p-value: {}'.format(sig_round(chi.statistic), sig_round(chi.pvalue))
+  pyplot.title(title)
+
+
+def show_plot(plots_outpath, famsize):
+  try:
+    if plots_outpath:
+      plot_path = '{}{}.png'.format(plots_outpath, famsize)
+      pyplot.savefig(plot_path)
+    else:
+      pyplot.show()
+  except KeyboardInterrupt:
+    if __name__ == '__main__':
+      sys.exit()
+    else:
+      raise
+  pyplot.close()
 
 
 if __name__ == '__main__':
