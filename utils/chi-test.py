@@ -33,13 +33,14 @@ def make_argparser():
          'expected and observed distributions. The output is '
          'tab-delimited, with three columns: # reads in family, # of reads the errors occurred in, '
          'expected number of errors occurring in this number of reads, observed number.')
+  parser.add_argument('-l', '--log', action='store_true',
+    help='Log10 transform the chi statistics and p-values.')
   parser.add_argument('-p', '--plots', dest='output', action='store_const', const='plots',
     help='Use matplotlib to plot the distributions.')
   parser.add_argument('-o', '--plots-outpath',
     help='Instead of displaying the plots live, save them to image files. Use this path base to '
          'create the filenames, with the format "[plots-outpath][famsize].png"')
-  parser.add_argument('-l', '--log', action='store_true',
-    help='Log10 transform the chi statistics and p-values.')
+  parser.add_argument('-T', '--plots-title')
   parser.add_argument('-L', '--log-file', type=argparse.FileType('w'),
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
@@ -89,7 +90,7 @@ def main(argv):
       if chi is not None:
         print('{}\t{}\t{:8.5f}\t{}'.format(famsize, total_errors, chi_stat, chi_p))
     elif args.output == 'plots':
-      plot_dists(exp_counts, obs_counts, famsize, chi, args.log, args.plots_outpath)
+      plot_dists(exp_counts, obs_counts, famsize, args.log, args.plots_outpath, args.plots_title)
 
 
 def read_expected(expected_file):
@@ -208,20 +209,7 @@ def sig_round(n, figs=3):
   return sign * round(n, figs - 1 - magnitude)
 
 
-def plot_dists(exp_counts, obs_counts, famsize, chi, log, plots_outpath):
-  figure = pyplot.figure(dpi=120, figsize=(6,4.5))
-  axis = figure.add_subplot(111)
-  if log:
-    exp_counts = log_transform(exp_counts)
-    obs_counts = log_transform(obs_counts)
-  x_values = list(range(1, len(exp_counts)+1))
-  axis.scatter(x_values, exp_counts, s=10, color='blue', label='expected')
-  axis.scatter(x_values, obs_counts, s=10, color='red', label='observed')
-  set_plot_display(axis, x_values, exp_counts, obs_counts, famsize, chi, log)
-  show_plot(plots_outpath, famsize)
-
-
-def log_transform(raw, default=-1):
+def log_transform(raw, default=-2):
   log = []
   for num in raw:
     if num == 0:
@@ -231,7 +219,20 @@ def log_transform(raw, default=-1):
   return log
 
 
-def set_plot_display(axis, x_values, exp_counts, obs_counts, famsize, chi, log):
+def plot_dists(exp_counts, obs_counts, famsize, log, outpath, title):
+  figure = pyplot.figure(dpi=120, figsize=(6,4.5))
+  axis = figure.add_subplot(1, 1, 1)
+  if log:
+    exp_counts = log_transform(exp_counts)
+    obs_counts = log_transform(obs_counts)
+  x_values = list(range(1, len(exp_counts)+1))
+  axis.scatter(x_values, exp_counts, s=10, color='blue', label='expected')
+  axis.scatter(x_values, obs_counts, s=10, color='red', label='observed')
+  set_plot_display(axis, x_values, exp_counts, obs_counts, famsize, title, log)
+  show_plot(outpath, famsize)
+
+
+def set_plot_display(axis, x_values, exp_counts, obs_counts, famsize, title, log):
   # Set the limits of the graph.
   MARGIN_SIZE = 0.05
   X_MAX = 5
@@ -250,8 +251,18 @@ def set_plot_display(axis, x_values, exp_counts, obs_counts, famsize, chi, log):
   # Draw a grid line across the 0 of both axes.
   axis.set_xticks([0], minor=True)
   if log:
-    axis.set_yticks([-1], minor=True)
-    axis.set_yticklabels(['Zero   '], minor=True)
+    axis.set_yticks([-2], minor=True)
+    # Replace the tick label at -2 with "Zero".
+    yticks = axis.get_yticks()
+    labels = axis.get_yticklabels()
+    i = 0
+    while i < len(yticks):
+      if yticks[i] == -2.0:
+        labels[i] = 'Zero'
+      else:
+        labels[i] = int(yticks[i])
+      i += 1
+    axis.set_yticklabels(labels)
   else:
     axis.set_yticks([0], minor=True)
   pyplot.grid(axis='both', which='minor')
@@ -262,11 +273,7 @@ def set_plot_display(axis, x_values, exp_counts, obs_counts, famsize, chi, log):
     pyplot.ylabel('Log10(Number of errors)')
   else:
     pyplot.ylabel('Number of errors')
-  title = 'Families with {} reads'.format(famsize)
-  if chi is None:
-    title += '\nno chi squared test'
-  else:
-    title += '\nchi: {}, p-value: {}'.format(sig_round(chi.statistic), sig_round(chi.pvalue))
+  title += '\nfamilies with {} reads'.format(famsize)
   pyplot.title(title)
 
 
