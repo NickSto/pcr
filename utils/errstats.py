@@ -67,11 +67,11 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
 
-  run(args.input, **vars(args))
+  print_family_errors(args.input, args.qual_thres, args.qual_format, args.human, args.all_repeats)
 
 
-def run(infile, qual_thres=0, qual_format='sanger', human=False, all_repeats=False, *nargs, **kwargs):
-  for family in parse(infile):
+def print_family_errors(infile, qual_thres, qual_format, human, all_repeats):
+  for family in parse_families(infile):
     for order in ('ab', 'ba'):
       for mate in (0, 1):
         seq_align, qual_align = family[order][mate]
@@ -97,7 +97,7 @@ def run(infile, qual_thres=0, qual_format='sanger', human=False, all_repeats=Fal
           print(family['bar'], order, mate, len(seq_align), repeat_errors, *errors, sep='\t')
 
 
-def parse(infile):
+def parse_families(infile):
   """Parse a families.msa.tsv file.
   Yields a data structure for each family:
   family = {
