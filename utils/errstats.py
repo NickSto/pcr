@@ -14,7 +14,7 @@ sys.path.insert(2, os.path.join(sys.path[1], 'lib'))
 from lib import simplewrap
 import consensus
 
-ARG_DEFAULTS = {'input':sys.stdin, 'qual_thres':0, 'qual_format':'sanger', 'log':sys.stderr,
+ARG_DEFAULTS = {'input':sys.stdin, 'qual_thres':0, 'log':sys.stderr,
                 'volume':logging.ERROR}
 DESCRIPTION = """Tally statistics on errors in reads, compared to the rest of their (single-\
 stranded) families.
@@ -49,8 +49,6 @@ def make_argparser():
   parser.add_argument('-H', '--human', action='store_true')
   parser.add_argument('-r', '--all-repeats', action='store_true')
   parser.add_argument('-q', '--qual-thres', type=int)
-  parser.add_argument('-F', '--qual-format', choices=('sanger', 'solexa', 'illumina1.3',
-                                                      'illumina1.5', 'illumina1.8'))
   parser.add_argument('-o', '--overlap', action='store_true',
     help='Figure out whether there is overlap between mates in read pairs and deduplicate errors '
          'that appear twice because of it. Requires --bam.')
@@ -73,17 +71,17 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
 
-  print_family_errors(args.input, args.qual_thres, args.qual_format, args.human, args.all_repeats)
+  print_family_errors(args.input, args.qual_thres, args.human, args.all_repeats)
 
 
-def print_family_errors(infile, qual_thres, qual_format, human, all_repeats):
+def print_family_errors(infile, qual_thres, human, all_repeats):
   for family in parse_families(infile):
     for order in ('ab', 'ba'):
       for mate in (0, 1):
         seq_align, qual_align = family[order][mate]
         if not seq_align:
           continue
-        consensus_seq = get_consensus_wrapper(seq_align, qual_align, qual_thres)
+        consensus_seq = get_consensus_wrapper(seq_align, qual_align, qual_thres, gapped=True)
         errors = get_family_errors(consensus_seq, seq_align)
         error_types = group_errors(errors)
         errors_per_seq, repeated_errors, error_repeat_counts = tally_errors(error_types, len(seq_align))
@@ -149,11 +147,11 @@ def parse_families(infile):
   yield family
 
 
-def get_consensus_wrapper(seqs, quals, qual_thres):
+def get_consensus_wrapper(seqs, quals, qual_thres, gapped=False):
   """Encode outgoing strings as bytes and decode return value into str."""
   seqs_bytes = [bytes(seq, 'utf8') for seq in seqs]
   quals_bytes = [bytes(qual, 'utf8') for qual in quals]
-  cons_bytes = consensus.get_consensus(seqs_bytes, quals_bytes, qual_thres=qual_thres)
+  cons_bytes = consensus.get_consensus(seqs_bytes, quals_bytes, qual_thres=qual_thres, gapped=gapped)
   return str(cons_bytes, 'utf8')
 
 
@@ -191,10 +189,12 @@ def compare(consensus_seq, seq_align, all_repeats=False):
 
 
 def get_family_errors(consensus_seq, alignment):
+  errors = []
   for coord, (cons_base, bases) in enumerate(zip(consensus_seq, zip(*alignment))):
     for seq_num, base in enumerate(bases):
       if base != cons_base:
-        yield (seq_num, coord+1, base)
+        errors.append((seq_num, coord+1, base))
+  return errors
 
 
 def group_errors(errors):
