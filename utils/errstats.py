@@ -12,6 +12,7 @@ import argparse
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 sys.path.insert(2, os.path.join(sys.path[1], 'lib'))
 from lib import simplewrap
+import consensus
 
 ARG_DEFAULTS = {'input':sys.stdin, 'qual_thres':0, 'qual_format':'sanger', 'log':sys.stderr,
                 'volume':logging.ERROR}
@@ -50,6 +51,11 @@ def make_argparser():
   parser.add_argument('-q', '--qual-thres', type=int)
   parser.add_argument('-F', '--qual-format', choices=('sanger', 'solexa', 'illumina1.3',
                                                       'illumina1.5', 'illumina1.8'))
+  parser.add_argument('-o', '--overlap', action='store_true',
+    help='Figure out whether there is overlap between mates in read pairs and deduplicate errors '
+         'that appear twice because of it. Requires --bam.')
+  parser.add_argument('-b', '--bam',
+    help='The final duplex consensus reads, aligned to a reference. Used to find overlaps.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'),
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   parser.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
@@ -77,24 +83,26 @@ def print_family_errors(infile, qual_thres, qual_format, human, all_repeats):
         seq_align, qual_align = family[order][mate]
         if not seq_align:
           continue
-        consensus, errors, repeat_errors, new_align = compare(seq_align,
-                                                              qual_align,
-                                                              thres=qual_thres,
-                                                              qual_format=qual_format,
-                                                              all_repeats=all_repeats,
-                                                              make_new_align=human)
+        consensus_seq = get_consensus_wrapper(seq_align, qual_align, qual_thres)
+        errors = get_family_errors(consensus_seq, seq_align)
+        error_types = group_errors(errors)
+        errors_per_seq, repeated_errors, error_repeat_counts = tally_errors(error_types, len(seq_align))
+        masked_alignment = mask_alignment(seq_align, errors)
         if human:
-          for seq, seq_errors in zip(new_align, errors):
+          for seq, seq_errors in zip(masked_alignment, errors_per_seq):
             print('{} errors: {}'.format(seq, seq_errors))
           if all_repeats:
-            print('{} errors: {}, repeat errors: {}\n'.format(consensus, sum(errors),
-                                                              ', '.join(map(str, repeat_errors))))
+            print('{} errors: {}, repeat errors: {}\n'.format(consensus_seq,
+                                                              sum(errors_per_seq),
+                                                              ', '.join(map(str, error_repeat_counts))))
           else:
-            print('{} errors: {}, repeat errors: {}\n'.format(consensus, sum(errors), repeat_errors))
+            print('{} errors: {}, repeat errors: {}\n'.format(consensus_seq,
+                                                              sum(errors_per_seq),
+                                                              repeated_errors))
         elif all_repeats:
-          print(family['bar'], order, mate, len(seq_align), *repeat_errors, sep='\t')
+          print(family['bar'], order, mate, len(seq_align), *error_repeat_counts, sep='\t')
         else:
-          print(family['bar'], order, mate, len(seq_align), repeat_errors, *errors, sep='\t')
+          print(family['bar'], order, mate, len(seq_align), repeated_errors, *errors_per_seq, sep='\t')
 
 
 def parse_families(infile):
@@ -141,49 +149,30 @@ def parse_families(infile):
   yield family
 
 
-def compare(seq_align, qual_align=None, thres=None, qual_format='sanger', all_repeats=False,
-            make_new_align=False):
-  consensus = ''
-  thres_char = phred_to_qual_char(thres, qual_format)
+def get_consensus_wrapper(seqs, quals, qual_thres):
+  """Encode outgoing strings as bytes and decode return value into str."""
+  seqs_bytes = [bytes(seq, 'utf8') for seq in seqs]
+  quals_bytes = [bytes(qual, 'utf8') for qual in quals]
+  cons_bytes = consensus.get_consensus(seqs_bytes, quals_bytes, qual_thres=qual_thres)
+  return str(cons_bytes, 'utf8')
+
+
+def compare(consensus_seq, seq_align, all_repeats=False):
   num_seqs = len(seq_align)
-  if qual_align is None:
-    qual_align = [''] * num_seqs
   new_align = [''] * num_seqs
   errors = [0] * num_seqs
-  last_qual = chr(126)
   if all_repeats:
     repeat_errors = []
   else:
     repeat_errors = 0
-  for bases, quals in zip(zip(*seq_align), zip(*qual_align)):
-    # Tally how many of each base there are at this position, and find the "winner" (the consensus).
+  # Walk along the alignment, one position at a time.
+  for bases, cons_base in zip(zip(*seq_align), consensus_seq):
+    # Tally how many of each base there are at this position.
     votes = {'A':0, 'C':0, 'G':0, 'T':0, '-':0, 'N':0}
-    cons = 'N'
-    max_vote = 0
-    for base, qual in zip(bases, quals):
-      #TODO: Get gap quality score using algorithm in consensus.c.
-      if qual == ' ':
-        qual = last_qual
-      last_qual = qual
-      if qual < thres_char:
-        continue
-      vote = votes[base]
-      vote += 1
-      if vote == max_vote:
-        cons = 'N'
-      elif vote > max_vote:
-        max_vote = vote
-        cons = base
-      votes[base] = vote
-    # Make new alignment without consensus bases.
-    last_qual = chr(126)
-    for i, (base, qual) in enumerate(zip(bases, quals)):
-      if qual == ' ':
-        qual = last_qual
-      last_qual = qual
-      if qual < thres_char:
-        new_align[i] += ' '
-      elif base == cons:
+    # Count votes and make new alignment without consensus bases.
+    for i, base in enumerate(bases):
+      votes[base] += 1
+      if base == cons_base:
         new_align[i] += '.'
       else:
         new_align[i] += base
@@ -191,25 +180,61 @@ def compare(seq_align, qual_align=None, thres=None, qual_format='sanger', all_re
     # How often did each error occur at this position?
     # (counting each unique non-consensus base as an error)
     for base, vote in votes.items():
-      if base != cons:
+      if base != cons_base:
         if all_repeats:
           if vote > 0:
             repeat_errors.append(vote)
         elif vote > 1:
           repeat_errors += 1
-    consensus += cons
     i += 1
-  return consensus, errors, repeat_errors, new_align
+  return errors, repeat_errors, new_align
 
 
-def phred_to_qual_char(phred, qual_format):
-  # Based on the trusty "standard": https://en.wikipedia.org/wiki/Fastq#Encoding
-  if qual_format == 'solexa' or qual_format == 'illumina1.3' or qual_format == 'illumina1.5':
-    return chr(phred+64)
-  if qual_format == 'sanger' or qual_format == 'illumina1.8':
-    return chr(phred+33)
-  else:
-    raise ValueError('Unrecognized qual_format "{}"'.format(qual_format))
+def get_family_errors(consensus_seq, alignment):
+  for coord, (cons_base, bases) in enumerate(zip(consensus_seq, zip(*alignment))):
+    for seq_num, base in enumerate(bases):
+      if base != cons_base:
+        yield (seq_num, coord+1, base)
+
+
+def group_errors(errors):
+  error_types = []
+  last_error = None
+  current_types = []
+  for error in sorted(errors, key=lambda error: error[1]):
+    if last_error is not None and last_error[1] == error[1] and last_error[2] == error[2]:
+      current_types.append(error)
+    else:
+      if current_types:
+        error_types.append(current_types)
+      current_types = [error]
+    last_error = error
+  if current_types:
+    error_types.append(current_types)
+  return error_types
+
+
+def tally_errors(error_types, num_seqs):
+  errors_per_seq = [0] * num_seqs
+  repeated_errors = 0
+  error_repeat_counts = []
+  for error_type in error_types:
+    error_repeat_counts.append(len(error_type))
+    if len(error_type) > 1:
+      repeated_errors += 1
+    for error in error_type:
+      errors_per_seq[error[0]] += 1
+  return errors_per_seq, repeated_errors, error_repeat_counts
+
+
+def mask_alignment(seq_alignment, errors):
+  masked_alignment = [['.'] * len(seq) for seq in seq_alignment]
+  for error in sorted(errors, key=lambda error: error[1]):
+    seq_num = error[0]
+    coord = error[1]
+    base = error[2]
+    masked_alignment[seq_num][coord-1] = base
+  return [''.join(seq) for seq in masked_alignment]
 
 
 def tone_down_logger():
