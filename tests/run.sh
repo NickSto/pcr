@@ -87,6 +87,7 @@ function all {
   duplex
   duplex_qual
   stats_diffs
+  errstats
 }
 
 # make-barcodes.awk
@@ -131,6 +132,14 @@ function duplex_gapqual {
 function stats_diffs {
   echo -e "\tstats.py diffs ::: gaps.msa.tsv:"
   python "$dirname/../utils/stats.py" diffs "$dirname/gaps.msa.tsv" | diff -s - "$dirname/gaps-diffs.out.tsv"
+}
+
+function errstats {
+  echo -e "\terrstats.py ::: families.msa.tsv:"
+  python3 "$dirname/../utils/errstats.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.out.tsv"
+  python3 "$dirname/../utils/errstats.py" -r "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-r.out.tsv"
+  python3 "$dirname/../utils/errstats.py" -H "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-H.out.tsv"
+  python3 "$dirname/../utils/errstats.py" -r -H "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-r.-H.out.tsv"
 }
 
 main "$@"
