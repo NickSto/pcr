@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
@@ -138,9 +138,8 @@ def get_family_stat(family, stat_fxn, *args, **kwargs):
   stat function will be passed directly to the stat function.
   Returns a data structure like that from parse_families(), but family[order][mate] == the stat you
   requested (the output of the given function)."""
-  stats = {}
+  stats = {'ab':[None, None], 'ba':[None, None]}
   for order in ('ab', 'ba'):
-    stats[order] = [None, None]
     for mate in (0, 1):
       seq_align, qual_align = family[order][mate]
       stats[order][mate] = stat_fxn(seq_align, qual_align, order, mate, *args, **kwargs)
@@ -149,13 +148,27 @@ def get_family_stat(family, stat_fxn, *args, **kwargs):
 
 def get_consensus(seq_align, qual_align, order, mate, qual_thres):
   """Wrapper around consensus.get_consensus().
-  Encodes strings passed to it as bytes and decodes its return value into str."""
+  When running under Python 3, this encodes strings passed to it as bytes and decodes its return
+  value into str."""
   if not (seq_align and qual_align):
     return None
-  seqs_bytes = [bytes(seq, 'utf8') for seq in seq_align]
-  quals_bytes = [bytes(qual, 'utf8') for qual in qual_align]
-  cons_bytes = consensus.get_consensus(seqs_bytes, quals_bytes, qual_thres=qual_thres, gapped=True)
-  return str(cons_bytes, 'utf8')
+  if sys.version_info.major == 3:
+    seqs_bytes = [bytes(seq, 'utf8') for seq in seq_align]
+    quals_bytes = [bytes(qual, 'utf8') for qual in qual_align]
+    qual_thres_byte = qual_thres
+  else:
+    seqs_bytes = seq_align
+    quals_bytes = qual_align
+    qual_thres_byte = chr(qual_thres)
+  cons_bytes = consensus.get_consensus(seqs_bytes,
+                                       quals_bytes,
+                                       qual_thres=qual_thres_byte,
+                                       gapped=True)
+  if sys.version_info.major == 3:
+    cons_seq = str(cons_bytes, 'utf8')
+  else:
+    cons_seq = cons_bytes
+  return cons_seq
 
 
 def get_num_seqs(seq_align, qual_align, order, mate):
