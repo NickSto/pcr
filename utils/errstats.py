@@ -46,8 +46,11 @@ def make_argparser():
 
   parser.add_argument('input', metavar='families.msa.tsv', nargs='?', type=argparse.FileType('r'),
     help='')
-  parser.add_argument('-H', '--human', action='store_true')
-  parser.add_argument('-r', '--all-repeats', action='store_true')
+  parser.add_argument('-a', '--alignment', action='store_true',
+    help='Print the full alignment, with consensus bases masked (to highlight errors).')
+  parser.add_argument('-r', '--all-repeats', action='store_true',
+    help='Output the full count of how many times each error recurred in each single-strand '
+         'alignment.')
   parser.add_argument('-q', '--qual-thres', type=int)
   parser.add_argument('-o', '--overlap', action='store_true',
     help='Figure out whether there is overlap between mates in read pairs and deduplicate errors '
@@ -71,36 +74,16 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
 
-  print_family_errors(args.input, args.qual_thres, args.human, args.all_repeats)
+  if args.overlap:
+    raise NotImplementedError
 
-
-def print_family_errors(infile, qual_thres, human, all_repeats):
-  for family in parse_families(infile):
-    for order in ('ab', 'ba'):
-      for mate in (0, 1):
-        seq_align, qual_align = family[order][mate]
-        if not seq_align:
-          continue
-        consensus_seq = get_consensus_wrapper(seq_align, qual_align, qual_thres, gapped=True)
-        errors = get_family_errors(consensus_seq, seq_align)
-        error_types = group_errors(errors)
-        errors_per_seq, repeated_errors, error_repeat_counts = tally_errors(error_types, len(seq_align))
-        masked_alignment = mask_alignment(seq_align, errors)
-        if human:
-          for seq, seq_errors in zip(masked_alignment, errors_per_seq):
-            print('{} errors: {}'.format(seq, seq_errors))
-          if all_repeats:
-            print('{} errors: {}, repeat errors: {}\n'.format(consensus_seq,
-                                                              sum(errors_per_seq),
-                                                              ', '.join(map(str, error_repeat_counts))))
-          else:
-            print('{} errors: {}, repeat errors: {}\n'.format(consensus_seq,
-                                                              sum(errors_per_seq),
-                                                              repeated_errors))
-        elif all_repeats:
-          print(family['bar'], order, mate, len(seq_align), *error_repeat_counts, sep='\t')
-        else:
-          print(family['bar'], order, mate, len(seq_align), repeated_errors, *errors_per_seq, sep='\t')
+  for family in parse_families(args.input):
+    barcode = family['bar']
+    consensi = get_family_stat(family, get_consensus, args.qual_thres)
+    errors = get_family_stat(family, get_family_errors, consensi)
+    num_seqs = get_family_stat(family, get_num_seqs)
+    if not args.overlap:
+      print_errors(errors, barcode, num_seqs, args.alignment, args.all_repeats, consensi, family)
 
 
 def parse_families(infile):
@@ -147,48 +130,76 @@ def parse_families(infile):
   yield family
 
 
-def get_consensus_wrapper(seqs, quals, qual_thres, gapped=False):
-  """Encode outgoing strings as bytes and decode return value into str."""
-  seqs_bytes = [bytes(seq, 'utf8') for seq in seqs]
-  quals_bytes = [bytes(qual, 'utf8') for qual in quals]
-  cons_bytes = consensus.get_consensus(seqs_bytes, quals_bytes, qual_thres=qual_thres, gapped=gapped)
+def get_family_stat(family, stat_fxn, *args, **kwargs):
+  """Common function for going through the four alignments in each family (+/- strand, 1st/2nd mate)
+  and calculating a statistic on each.
+  Pass in a function which takes the fixed arguments seq_align, qual_align, order, and mate,
+  plus whatever custom ones you want after that. The arguments to this function that come after the
+  stat function will be passed directly to the stat function.
+  Returns a data structure like that from parse_families(), but family[order][mate] == the stat you
+  requested (the output of the given function)."""
+  stats = {}
+  for order in ('ab', 'ba'):
+    stats[order] = [None, None]
+    for mate in (0, 1):
+      seq_align, qual_align = family[order][mate]
+      stats[order][mate] = stat_fxn(seq_align, qual_align, order, mate, *args, **kwargs)
+  return stats
+
+
+def get_consensus(seq_align, qual_align, order, mate, qual_thres):
+  """Wrapper around consensus.get_consensus().
+  Encodes strings passed to it as bytes and decodes its return value into str."""
+  if not (seq_align and qual_align):
+    return None
+  seqs_bytes = [bytes(seq, 'utf8') for seq in seq_align]
+  quals_bytes = [bytes(qual, 'utf8') for qual in qual_align]
+  cons_bytes = consensus.get_consensus(seqs_bytes, quals_bytes, qual_thres=qual_thres, gapped=True)
   return str(cons_bytes, 'utf8')
 
 
-def compare(consensus_seq, seq_align, all_repeats=False):
-  num_seqs = len(seq_align)
-  new_align = [''] * num_seqs
-  errors = [0] * num_seqs
-  if all_repeats:
-    repeat_errors = []
-  else:
-    repeat_errors = 0
-  # Walk along the alignment, one position at a time.
-  for bases, cons_base in zip(zip(*seq_align), consensus_seq):
-    # Tally how many of each base there are at this position.
-    votes = {'A':0, 'C':0, 'G':0, 'T':0, '-':0, 'N':0}
-    # Count votes and make new alignment without consensus bases.
-    for i, base in enumerate(bases):
-      votes[base] += 1
-      if base == cons_base:
-        new_align[i] += '.'
-      else:
-        new_align[i] += base
-        errors[i] += 1
-    # How often did each error occur at this position?
-    # (counting each unique non-consensus base as an error)
-    for base, vote in votes.items():
-      if base != cons_base:
+def get_num_seqs(seq_align, qual_align, order, mate):
+  return len(seq_align)
+
+
+def get_family_errors(seq_align, qual_align, order, mate, consensi):
+  if not (seq_align and qual_align):
+    return None
+  consensus_seq = consensi[order][mate]
+  errors = get_alignment_errors(consensus_seq, seq_align)
+  error_types = group_errors(errors)
+  return error_types
+
+
+def print_errors(family_errors, barcode, num_seqs, print_alignment, all_repeats, consensi=None, family=None):
+  for order in ('ab', 'ba'):
+    for mate in (0, 1):
+      num_seq = num_seqs[order][mate]
+      if num_seq == 0:
+        continue
+      error_types = family_errors[order][mate]
+      errors_per_seq, repeated_errors, error_repeat_counts = tally_errors(error_types, num_seq)
+      if print_alignment:
+        consensus_seq = consensi[order][mate]
+        seq_align, qual_align = family[order][mate]
+        masked_alignment = mask_alignment(seq_align, error_types)
+        for seq, seq_errors in zip(masked_alignment, errors_per_seq):
+          print('{} errors: {}'.format(seq, seq_errors))
         if all_repeats:
-          if vote > 0:
-            repeat_errors.append(vote)
-        elif vote > 1:
-          repeat_errors += 1
-    i += 1
-  return errors, repeat_errors, new_align
+          print('{} errors: {}, repeat errors: {}\n'.format(consensus_seq,
+                                                            sum(errors_per_seq),
+                                                            ', '.join(map(str, error_repeat_counts))))
+        else:
+          print('{} errors: {}, repeat errors: {}\n'.format(consensus_seq,
+                                                            sum(errors_per_seq),
+                                                            repeated_errors))
+      elif all_repeats:
+        print(family['bar'], order, mate, num_seq, *error_repeat_counts, sep='\t')
+      else:
+        print(family['bar'], order, mate, num_seq, repeated_errors, *errors_per_seq, sep='\t')
 
 
-def get_family_errors(consensus_seq, alignment):
+def get_alignment_errors(consensus_seq, alignment):
   errors = []
   for coord, (cons_base, bases) in enumerate(zip(consensus_seq, zip(*alignment))):
     for seq_num, base in enumerate(bases):
@@ -198,6 +209,7 @@ def get_family_errors(consensus_seq, alignment):
 
 
 def group_errors(errors):
+  """Group errors by coordinate and base."""
   error_types = []
   last_error = None
   current_types = []
@@ -227,13 +239,14 @@ def tally_errors(error_types, num_seqs):
   return errors_per_seq, repeated_errors, error_repeat_counts
 
 
-def mask_alignment(seq_alignment, errors):
+def mask_alignment(seq_alignment, error_types):
   masked_alignment = [['.'] * len(seq) for seq in seq_alignment]
-  for error in sorted(errors, key=lambda error: error[1]):
-    seq_num = error[0]
-    coord = error[1]
-    base = error[2]
-    masked_alignment[seq_num][coord-1] = base
+  for error_type in error_types:
+    for error in error_type:
+      seq_num = error[0]
+      coord = error[1]
+      base = error[2]
+      masked_alignment[seq_num][coord-1] = base
   return [''.join(seq) for seq in masked_alignment]
 
 

@@ -138,8 +138,8 @@ function errstats {
   echo -e "\terrstats.py ::: families.msa.tsv:"
   python3 "$dirname/../utils/errstats.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.out.tsv"
   python3 "$dirname/../utils/errstats.py" -r "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-r.out.tsv"
-  python3 "$dirname/../utils/errstats.py" -H "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-H.out.tsv"
-  python3 "$dirname/../utils/errstats.py" -r -H "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-r.-H.out.tsv"
+  python3 "$dirname/../utils/errstats.py" -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-a.out.tsv"
+  python3 "$dirname/../utils/errstats.py" -r -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-r.-a.out.tsv"
 }
 
 main "$@"
