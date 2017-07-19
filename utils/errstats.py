@@ -6,15 +6,17 @@ from __future__ import unicode_literals
 import os
 import sys
 import errno
+import random
 import logging
 import argparse
+import pyBamParser.bam
 # sys.path hack to access lib package in root directory.
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 sys.path.insert(2, os.path.join(sys.path[1], 'lib'))
 from lib import simplewrap
 import consensus
 
-ARG_DEFAULTS = {'input':sys.stdin, 'qual_thres':0, 'log':sys.stderr,
+ARG_DEFAULTS = {'input':sys.stdin, 'qual_thres':0, 'seed':0, 'log':sys.stderr,
                 'volume':logging.ERROR}
 DESCRIPTION = """Tally statistics on errors in reads, compared to the rest of their (single-\
 stranded) families.
@@ -51,12 +53,19 @@ def make_argparser():
   parser.add_argument('-r', '--all-repeats', action='store_true',
     help='Output the full count of how many times each error recurred in each single-strand '
          'alignment.')
-  parser.add_argument('-q', '--qual-thres', type=int)
+  parser.add_argument('-q', '--qual-thres', type=int,
+    help='PHRED quality threshold for consensus making. NOTE: This should be the same as was used '
+         'for producing the reads in the bam file, if provided!')
   parser.add_argument('-o', '--overlap', action='store_true',
     help='Figure out whether there is overlap between mates in read pairs and deduplicate errors '
          'that appear twice because of it. Requires --bam.')
   parser.add_argument('-b', '--bam',
     help='The final duplex consensus reads, aligned to a reference. Used to find overlaps.')
+  parser.add_argument('-s', '--seed', type=int,
+    help='The random seed. Used to choose which error to keep when deduplicating errors in '
+         'overlaps. Default: %(default)s')
+  parser.add_argument('-d', '--dedup-log', type=argparse.FileType('w'),
+    help='Log overlap error deduplication to this file. Warning: Will overwrite any existing file.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'),
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   parser.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
@@ -74,16 +83,19 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
 
-  if args.overlap:
-    raise NotImplementedError
-
+  family_stats = {}
   for family in parse_families(args.input):
     barcode = family['bar']
     consensi = get_family_stat(family, get_consensus, args.qual_thres)
     errors = get_family_stat(family, get_family_errors, consensi)
     num_seqs = get_family_stat(family, get_num_seqs)
-    if not args.overlap:
+    if args.overlap:
+      family_stats[barcode] = collate_stats(consensi, errors, num_seqs)
+    else:
       print_errors(errors, barcode, num_seqs, args.alignment, args.all_repeats, consensi, family)
+
+  if args.overlap:
+    dedup_all_errors(args.bam, family_stats, args.dedup_log)
 
 
 def parse_families(infile):
@@ -184,6 +196,19 @@ def get_family_errors(seq_align, qual_align, order, mate, consensi):
   return error_types
 
 
+def collate_stats(consensi, errors, num_seqs):
+  stats = {'ab':[None, None], 'ba':[None, None]}
+  for order in ('ab', 'ba'):
+    for mate in (0, 1):
+      stats[order][mate] = {
+        'consensus': consensi[order][mate],
+        'errors': errors[order][mate],
+        'num_seqs': num_seqs[order][mate],
+        'duplicates': 0,
+      }
+  return stats
+
+
 def print_errors(family_errors, barcode, num_seqs, print_alignment, all_repeats, consensi=None, family=None):
   for order in ('ab', 'ba'):
     for mate in (0, 1):
@@ -231,11 +256,11 @@ def group_errors(errors):
       current_types.append(error)
     else:
       if current_types:
-        error_types.append(current_types)
+        error_types.append(tuple(current_types))
       current_types = [error]
     last_error = error
   if current_types:
-    error_types.append(current_types)
+    error_types.append(tuple(current_types))
   return error_types
 
 
@@ -261,6 +286,127 @@ def mask_alignment(seq_alignment, error_types):
       base = error[2]
       masked_alignment[seq_num][coord-1] = base
   return [''.join(seq) for seq in masked_alignment]
+
+
+def dedup_all_errors(bam_path, family_stats, dedup_log):
+  pair = [None, None]
+  for read in pyBamParser.bam.Reader(bam_path):
+    barcode, order, mate = get_read_identifiers(read)
+    # Skip if it's a secondary alignment or a supplementary alignment.
+    if read.get_flag() & (256+2048):
+      continue
+    if pair[mate]:
+      # We already have this mate for this pair.
+      # We must be on a new pair now, and the matching mate for the last one is missing.
+      logging.info('Failed to complete the pair for {}'.format(pair[mate].get_read_name()))
+      pair = [None, None]
+      pair[mate] = read
+    else:
+      other_mate = mate ^ 1
+      if pair[other_mate]:
+        barcode2, order2, mate2 = get_read_identifiers(pair[other_mate])
+        if barcode2 == barcode and order2 == order:
+          # It's a matching pair.
+          pair[mate] = read
+          try:
+            dedup_pair(pair, family_stats[barcode][order], dedup_log)
+          except KeyError:
+            fail('Read pair found in BAM but not in alignment:\nbar: {}, order: {}'
+                 .format(barcode, order))
+          pair = [None, None]
+        else:
+          # The reads do not match; they're from different pairs.
+          # We must be on a new pair now, and the matching mate for the last one is missing.
+          logging.info('Failed to complete the pair for {}.{}'.format(barcode2, order2))
+          pair = [None, None]
+          pair[mate] = read
+      else:
+        # The pair is empty ([None, None]). This should only happen on the first loop.
+        logging.info('Pair empty ([None, None]).')
+        pair[mate] = read
+  if pair[0] and pair[1]:
+    try:
+      dedup_pair(pair, family_stats[barcode][order], dedup_log)
+    except KeyError:
+      fail('Read pair found in BAM but not in alignment:\nbar: {}, order: {}'
+           .format(barcode, order))
+  elif pair[0] or pair[1]:
+    read = pair[0] or pair[1]
+    logging.info('Failed to complete the pair for {}'.format(read.get_read_name()))
+
+
+def get_read_identifiers(read):
+  name = read.get_read_name()
+  barcode, order = name.split('.')
+  flags = read.get_flag()
+  if flags & 64:
+    mate = 0
+  elif flags & 128:
+    mate = 1
+  else:
+    raise ValueError('Neither flag 64 nor 128 are set: {}'.format(read.get_flag()))
+  return barcode, order, mate
+
+
+def dedup_pair(pair, pair_stats, dedup_log):
+  dedup_log and dedup_log.write('{} ({} read pairs)\n'.format(pair[0].get_read_name(),
+                                                              pair_stats[0]['num_seqs']))
+  errors_by_ref_coord, nonref_errors = convert_pair_errors(pair, pair_stats)
+  new_errors_lists = ([], [])
+  errors1 = set(errors_by_ref_coord[0].keys())
+  errors2 = set(errors_by_ref_coord[1].keys())
+  all_errors = list(errors1.union(errors2))
+  for ref_coord, base in sorted(all_errors):
+    these_error_types = [None, None]
+    for mate in (0, 1):
+      these_error_types[mate] = errors_by_ref_coord[mate].get((ref_coord, base))
+    if these_error_types[0] and these_error_types[1]:
+      # The same error occurred at the same position in both reads. Keep only one of them.
+      mate = random.choice((0, 1))
+      these_error_types[mate] = None
+      pair_stats[mate]['duplicates'] += 1
+      dedup_log and dedup_log.write('omitting error {} {} from mate {}\n'
+                                    .format(ref_coord, base, mate+1))
+    dedup_log and dedup_log.write('{:5d} {:1s}:  '.format(ref_coord, base))
+    for mate in (0, 1):
+      error_type = these_error_types[mate]
+      if error_type is None:
+        dedup_log and dedup_log.write('             ')
+      else:
+        dedup_log and dedup_log.write('  {:2d} errors  '.format(len(error_type)))
+      new_errors_lists[mate].append(these_error_types[mate])
+    dedup_log and dedup_log.write('\n')
+  if dedup_log and (nonref_errors[0] or nonref_errors[1]):
+    dedup_log.write('NO REF COORD:\n')
+    for mate in (0, 1):
+      for error_type in nonref_errors[mate]:
+        error = error_type[0]
+        dedup_log.write('{:5d} {:1s}:  '.format(error[1], error[2]))
+        if mate == 1:
+          dedup_log.write('             ')
+        dedup_log.write('  {:2d} errors\n'.format(len(error_type)))
+  dedup_log and dedup_log.write('\n')
+  for mate in (0, 1):
+    new_errors_lists[mate].extend(nonref_errors[mate])
+    pair_stats[mate]['errors'] = new_errors_lists[mate]
+
+
+def convert_pair_errors(pair, pair_stats):
+  errors_by_ref_coord = [{}, {}]
+  nonref_errors = [[], []]
+  for mate in (0, 1):
+    read = pair[mate]
+    error_types = pair_stats[mate]['errors']
+    for i, error_type in enumerate(error_types):
+      error = error_type[0]
+      read_coord = error[1]
+      base = error[2]
+      ref_coord = read.to_ref_coord(read_coord)
+      if ref_coord is None:
+        nonref_errors[mate].append(error_type)
+      else:
+        errors_by_ref_coord[mate][(ref_coord, base)] = error_type
+  return errors_by_ref_coord, nonref_errors
 
 
 def tone_down_logger():
