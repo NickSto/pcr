@@ -83,6 +83,7 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
 
+  logging.info('Calculating consensus sequences and counting errors..')
   family_stats = {}
   for family in parse_families(args.input):
     barcode = family['bar']
@@ -92,10 +93,14 @@ def main(argv):
     if args.overlap:
       family_stats[barcode] = collate_stats(consensi, errors, num_seqs)
     else:
-      print_errors(errors, barcode, num_seqs, args.alignment, args.all_repeats, consensi, family)
+      print_errors(errors, barcode, num_seqs, args.all_repeats, args.alignment, consensi, family)
 
   if args.overlap:
+    logging.info('Deduplicating errors in overlaps..')
     dedup_all_errors(args.bam, family_stats, args.dedup_log)
+    for barcode in family_stats:
+      consensi, errors, num_seqs, duplicates = uncollate_stats(family_stats[barcode])
+      print_errors(errors, barcode, num_seqs, args.all_repeats)
 
 
 def parse_families(infile):
@@ -209,7 +214,22 @@ def collate_stats(consensi, errors, num_seqs):
   return stats
 
 
-def print_errors(family_errors, barcode, num_seqs, print_alignment, all_repeats, consensi=None, family=None):
+def uncollate_stats(stats):
+  consensi = {'ab':[None, None], 'ba':[None, None]}
+  errors = {'ab':[None, None], 'ba':[None, None]}
+  num_seqs = {'ab':[None, None], 'ba':[None, None]}
+  duplicates = {'ab':[None, None], 'ba':[None, None]}
+  for order in ('ab', 'ba'):
+    for mate in (0, 1):
+      consensi[order][mate] = stats[order][mate]['consensus']
+      errors[order][mate] = stats[order][mate]['errors']
+      num_seqs[order][mate] = stats[order][mate]['num_seqs']
+      duplicates[order][mate] = stats[order][mate]['duplicates']
+  return consensi, errors, num_seqs, duplicates
+
+
+def print_errors(family_errors, barcode, num_seqs, all_repeats, print_alignment=False,
+                 consensi=None, family=None):
   for order in ('ab', 'ba'):
     for mate in (0, 1):
       num_seq = num_seqs[order][mate]
@@ -232,9 +252,9 @@ def print_errors(family_errors, barcode, num_seqs, print_alignment, all_repeats,
                                                             sum(errors_per_seq),
                                                             repeated_errors))
       elif all_repeats:
-        print(family['bar'], order, mate, num_seq, *error_repeat_counts, sep='\t')
+        print(barcode, order, mate, num_seq, *error_repeat_counts, sep='\t')
       else:
-        print(family['bar'], order, mate, num_seq, repeated_errors, *errors_per_seq, sep='\t')
+        print(barcode, order, mate, num_seq, repeated_errors, *errors_per_seq, sep='\t')
 
 
 def get_alignment_errors(consensus_seq, alignment):
@@ -298,7 +318,7 @@ def dedup_all_errors(bam_path, family_stats, dedup_log):
     if pair[mate]:
       # We already have this mate for this pair.
       # We must be on a new pair now, and the matching mate for the last one is missing.
-      logging.info('Failed to complete the pair for {}'.format(pair[mate].get_read_name()))
+      logging.debug('Failed to complete the pair for {}'.format(pair[mate].get_read_name()))
       pair = [None, None]
       pair[mate] = read
     else:
@@ -317,12 +337,13 @@ def dedup_all_errors(bam_path, family_stats, dedup_log):
         else:
           # The reads do not match; they're from different pairs.
           # We must be on a new pair now, and the matching mate for the last one is missing.
-          logging.info('Failed to complete the pair for {}.{}'.format(barcode2, order2))
+          logging.debug('Failed to complete the pair for {}.{}'.format(barcode2, order2))
           pair = [None, None]
           pair[mate] = read
       else:
-        # The pair is empty ([None, None]). This should only happen on the first loop.
-        logging.info('Pair empty ([None, None]).')
+        # The pair is empty ([None, None]).
+        # This happens on the first loop, and after a pair has been completed on the previous loop.
+        logging.debug('Pair for {} empty ([None, None]).'.format(barcode))
         pair[mate] = read
   if pair[0] and pair[1]:
     try:
@@ -332,7 +353,7 @@ def dedup_all_errors(bam_path, family_stats, dedup_log):
            .format(barcode, order))
   elif pair[0] or pair[1]:
     read = pair[0] or pair[1]
-    logging.info('Failed to complete the pair for {}'.format(read.get_read_name()))
+    logging.debug('Failed to complete the pair for {}'.format(read.get_read_name()))
 
 
 def get_read_identifiers(read):
@@ -348,47 +369,17 @@ def get_read_identifiers(read):
   return barcode, order, mate
 
 
-def dedup_pair(pair, pair_stats, dedup_log):
+def dedup_pair(pair, pair_stats, dedup_log=None):
   dedup_log and dedup_log.write('{} ({} read pairs)\n'.format(pair[0].get_read_name(),
                                                               pair_stats[0]['num_seqs']))
   errors_by_ref_coord, nonref_errors = convert_pair_errors(pair, pair_stats)
-  new_errors_lists = ([], [])
-  errors1 = set(errors_by_ref_coord[0].keys())
-  errors2 = set(errors_by_ref_coord[1].keys())
-  all_errors = list(errors1.union(errors2))
-  for ref_coord, base in sorted(all_errors):
-    these_error_types = [None, None]
-    for mate in (0, 1):
-      these_error_types[mate] = errors_by_ref_coord[mate].get((ref_coord, base))
-    if these_error_types[0] and these_error_types[1]:
-      # The same error occurred at the same position in both reads. Keep only one of them.
-      mate = random.choice((0, 1))
-      these_error_types[mate] = None
-      pair_stats[mate]['duplicates'] += 1
-      dedup_log and dedup_log.write('omitting error {} {} from mate {}\n'
-                                    .format(ref_coord, base, mate+1))
-    dedup_log and dedup_log.write('{:5d} {:1s}:  '.format(ref_coord, base))
-    for mate in (0, 1):
-      error_type = these_error_types[mate]
-      if error_type is None:
-        dedup_log and dedup_log.write('             ')
-      else:
-        dedup_log and dedup_log.write('  {:2d} errors  '.format(len(error_type)))
-      new_errors_lists[mate].append(these_error_types[mate])
-    dedup_log and dedup_log.write('\n')
+  new_errors_lists = null_duplicate_errors(errors_by_ref_coord, nonref_errors, pair_stats, dedup_log)
   if dedup_log and (nonref_errors[0] or nonref_errors[1]):
-    dedup_log.write('NO REF COORD:\n')
-    for mate in (0, 1):
-      for error_type in nonref_errors[mate]:
-        error = error_type[0]
-        dedup_log.write('{:5d} {:1s}:  '.format(error[1], error[2]))
-        if mate == 1:
-          dedup_log.write('             ')
-        dedup_log.write('  {:2d} errors\n'.format(len(error_type)))
+    log_nonref_errors(nonref_errors, dedup_log)
   dedup_log and dedup_log.write('\n')
   for mate in (0, 1):
     new_errors_lists[mate].extend(nonref_errors[mate])
-    pair_stats[mate]['errors'] = new_errors_lists[mate]
+    pair_stats[mate]['errors'] = filter(lambda e: e is not None, new_errors_lists[mate])
 
 
 def convert_pair_errors(pair, pair_stats):
@@ -407,6 +398,46 @@ def convert_pair_errors(pair, pair_stats):
       else:
         errors_by_ref_coord[mate][(ref_coord, base)] = error_type
   return errors_by_ref_coord, nonref_errors
+
+
+def null_duplicate_errors(errors_by_ref_coord, nonref_errors, pair_stats, dedup_log=None):
+  new_errors_lists = ([], [])
+  errors1 = set(errors_by_ref_coord[0].keys())
+  errors2 = set(errors_by_ref_coord[1].keys())
+  all_errors = list(errors1.union(errors2))
+  for ref_coord, base in sorted(all_errors):
+    these_error_types = [None, None]
+    for mate in (0, 1):
+      these_error_types[mate] = errors_by_ref_coord[mate].get((ref_coord, base))
+    if these_error_types[0] and these_error_types[1]:
+      # The same error occurred at the same position in both reads. Keep only one of them.
+      mate = random.choice((0, 1))
+      these_error_types[mate] = None
+      pair_stats[mate]['duplicates'] += 1
+      dedup_log and dedup_log.write('omitting error {} {} from mate {}\n'
+                                    .format(ref_coord, base, mate+1))
+    dedup_log and dedup_log.write('{:5d} {:1s}:  '.format(ref_coord, base))
+    for mate in (0, 1):
+      if dedup_log:
+        error_type = these_error_types[mate]
+        if error_type is None:
+          dedup_log.write('             ')
+        else:
+          dedup_log.write('  {:2d} errors  '.format(len(error_type)))
+      new_errors_lists[mate].append(these_error_types[mate])
+    dedup_log and dedup_log.write('\n')
+  return new_errors_lists
+
+
+def log_nonref_errors(nonref_errors, dedup_log):
+  dedup_log.write('NO REF COORD:\n')
+  for mate in (0, 1):
+    for error_type in nonref_errors[mate]:
+      error = error_type[0]
+      dedup_log.write('{:5d} {:1s}:  '.format(error[1], error[2]))
+      if mate == 1:
+        dedup_log.write('             ')
+      dedup_log.write('  {:2d} errors\n'.format(len(error_type)))
 
 
 def tone_down_logger():
