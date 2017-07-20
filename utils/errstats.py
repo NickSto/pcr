@@ -59,6 +59,8 @@ def make_argparser():
   parser.add_argument('-q', '--qual-thres', type=int,
     help='PHRED quality threshold for consensus making. NOTE: This should be the same as was used '
          'for producing the reads in the bam file, if provided!')
+  parser.add_argument('-Q', '--qual-errors', action='store_true',
+    help='Don\'t count errors with quality scores below the --qual-thres in the error counts.')
   parser.add_argument('-o', '--overlap', action='store_true',
     help='Figure out whether there is overlap between mates in read pairs and deduplicate errors '
          'that appear twice because of it. Requires --bam.')
@@ -71,7 +73,7 @@ def make_argparser():
     help='Log overlap error deduplication to this file. Warning: Will overwrite any existing file.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'),
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  parser.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  parser.add_argument('-S', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
   parser.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
   parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
 
@@ -86,12 +88,17 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
 
+  if args.qual_errors:
+    error_qual_thres = args.qual_thres
+  else:
+    error_qual_thres = 0
+
   logging.info('Calculating consensus sequences and counting errors..')
   family_stats = {}
   for family in parse_families(args.input):
     barcode = family['bar']
     consensi = get_family_stat(family, get_consensus, args.qual_thres)
-    errors = get_family_stat(family, get_family_errors, consensi)
+    errors = get_family_stat(family, get_family_errors, consensi, error_qual_thres)
     num_seqs = get_family_stat(family, get_num_seqs)
     if args.overlap:
       family_stats[barcode] = collate_stats(consensi, errors, num_seqs)
@@ -195,11 +202,11 @@ def get_num_seqs(seq_align, qual_align, order, mate):
   return len(seq_align)
 
 
-def get_family_errors(seq_align, qual_align, order, mate, consensi):
+def get_family_errors(seq_align, qual_align, order, mate, consensi, qual_thres):
   if not (seq_align and qual_align):
     return None
   consensus_seq = consensi[order][mate]
-  errors = get_alignment_errors(consensus_seq, seq_align)
+  errors = get_alignment_errors(consensus_seq, seq_align, qual_align, qual_thres)
   error_types = group_errors(errors)
   return error_types
 
@@ -260,11 +267,12 @@ def print_errors(family_errors, barcode, num_seqs, all_repeats, print_alignment=
         print(barcode, order, mate, num_seq, repeated_errors, *errors_per_seq, sep='\t')
 
 
-def get_alignment_errors(consensus_seq, alignment):
+def get_alignment_errors(consensus_seq, seq_align, qual_align, qual_thres):
+  qual_thres_char = chr(qual_thres+32)
   errors = []
-  for coord, (cons_base, bases) in enumerate(zip(consensus_seq, zip(*alignment))):
-    for seq_num, base in enumerate(bases):
-      if base != cons_base:
+  for coord, (cons_base, bases, quals) in enumerate(zip(consensus_seq, zip(*seq_align), zip(*qual_align))):
+    for seq_num, (base, qual) in enumerate(zip(bases, quals)):
+      if base != cons_base and qual >= qual_thres_char:
         errors.append((seq_num, coord+1, base))
   return errors
 
