@@ -175,11 +175,11 @@ def get_consensus(seq_align, qual_align, order, mate, qual_thres):
   if sys.version_info.major == 3:
     seqs_bytes = [bytes(seq, 'utf8') for seq in seq_align]
     quals_bytes = [bytes(qual, 'utf8') for qual in qual_align]
-    qual_thres_byte = qual_thres
+    qual_thres_byte = qual_thres+32
   else:
     seqs_bytes = seq_align
     quals_bytes = qual_align
-    qual_thres_byte = chr(qual_thres)
+    qual_thres_byte = chr(qual_thres+32)
   cons_bytes = consensus.get_consensus(seqs_bytes,
                                        quals_bytes,
                                        qual_thres=qual_thres_byte,
