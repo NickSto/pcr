@@ -323,8 +323,10 @@ def dedup_all_errors(bam_path, family_stats, dedup_log):
   pair = [None, None]
   for read in pyBamParser.bam.Reader(bam_path):
     barcode, order, mate = get_read_identifiers(read)
-    # Skip if it's a secondary alignment or a supplementary alignment.
-    if read.get_flag() & (256+2048):
+    # Skip if it's a secondary alignment or a supplementary alignment, or if it's not mapped in
+    # the proper pair.
+    flags = read.get_flag()
+    if flags & (256+2048) or not flags & 2:
       continue
     if pair[mate]:
       # We already have this mate for this pair.
