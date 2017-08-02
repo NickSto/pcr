@@ -549,6 +549,10 @@ def get_edges(pair):
         edges[mate]['overlap_'+edge] = overlap[edge]
       else:
         edges[mate]['overlap_'+edge] = None
+    if edges[mate]['overlap_start'] is not None and edges[mate]['overlap_end'] is None:
+      edges[mate]['overlap_end'] = overlap['end']
+    elif edges[mate]['overlap_start'] is None and edges[mate]['overlap_end'] is not None:
+      edges[mate]['overlap_start'] = overlap['start']
   return edges
 
 
