@@ -475,11 +475,11 @@ def convert_pair_errors(pair, pair_stats):
         base = REVCOMP_MAP[error[2]]
       else:
         base = error[2]
-      ref_coord = read.to_ref_coord(read_coord)+1
+      ref_coord = read.to_ref_coord(read_coord)
       if ref_coord is None:
         nonref_errors[mate].append(error_type)
       else:
-        errors_by_ref_coord[mate][(ref_coord, base)] = error_type
+        errors_by_ref_coord[mate][(ref_coord+1, base)] = error_type
   return errors_by_ref_coord, nonref_errors
 
 
