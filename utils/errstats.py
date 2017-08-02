@@ -515,7 +515,8 @@ def null_duplicate_errors(errors_by_ref_coord, pair_stats, dedup_log=None):
       # The same error occurred at the same position in both reads. Keep only one of them.
       mate = random.choice((0, 1))
       these_error_types[mate] = None
-      pair_stats[mate]['overlap']['duplicates'] += 1
+      pair_stats[0]['overlap']['duplicates'] += 1
+      pair_stats[1]['overlap']['duplicates'] += 1
       dedup_log and dedup_log.write('omitting error {} {} from mate {}\n'
                                     .format(ref_coord, base, mate+1))
     dedup_log and dedup_log.write('{:5d} {:1s}:  '.format(ref_coord, base))
