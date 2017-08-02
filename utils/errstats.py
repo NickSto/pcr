@@ -16,7 +16,10 @@ sys.path.insert(2, os.path.join(sys.path[1], 'lib'))
 # sys.path hack to allow overriding installed pyBamParser.
 if os.environ.get('PYTHONPATH'):
   sys.path.insert(1, os.environ.get('PYTHONPATH'))
-import pyBamParser.bam
+try:
+  import pyBamParser.bam
+except ImportError:
+  pass
 from lib import simplewrap
 import consensus
 
@@ -102,6 +105,14 @@ def main(argv):
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
+
+  if args.dedup:
+    if not args.bam:
+      fail('--dedup requires a --bam file to be supplied.')
+    try:
+      pyBamParser.bam
+    except NameError:
+      fail('Failed to import pyBamParser (required for --dedup).')
 
   if args.qual_errors:
     error_qual_thres = args.qual_thres
