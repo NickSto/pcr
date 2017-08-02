@@ -23,6 +23,10 @@ except ImportError:
 from lib import simplewrap
 import consensus
 
+REVCOMP_MAP = {'a':'t', 'c':'g', 'g':'c', 't':'a', 'r':'y', 'y':'r', 'm':'k', 'k':'m', 'b':'v',
+               'd':'h', 'h':'d', 'v':'b', 'A':'T', 'C':'G', 'G':'C', 'T':'A', 'R':'Y', 'Y':'R',
+               'M':'K', 'K':'M', 'B':'V', 'D':'H', 'H':'D', 'V':'B'}
+
 DESCRIPTION = """Tally statistics on errors in reads, compared to their (single-stranded) \
 consensus sequences. Output is one tab-delimited line per single-read alignment (one mate within \
 one strand (order) within one family (barcode)).
@@ -467,7 +471,10 @@ def convert_pair_errors(pair, pair_stats):
     for i, error_type in enumerate(error_types):
       error = error_type[0]
       read_coord = error[1]
-      base = error[2]
+      if read.is_seq_reverse_complement():
+        base = REVCOMP_MAP[error[2]]
+      else:
+        base = error[2]
       ref_coord = read.to_ref_coord(read_coord)
       if ref_coord is None:
         nonref_errors[mate].append(error_type)
