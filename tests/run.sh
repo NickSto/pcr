@@ -88,6 +88,7 @@ function all {
   duplex_qual
   stats_diffs
   errstats
+  errstats_overlap
 }
 
 # make-barcodes.awk
@@ -140,6 +141,16 @@ function errstats {
   python "$dirname/../utils/errstats.py" -R "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.out.tsv"
   python "$dirname/../utils/errstats.py" -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-a.out.tsv"
   python "$dirname/../utils/errstats.py" -R -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.-a.out.tsv"
+}
+
+function errstats_overlap {
+  echo -e "\terrstats.py ::: families.overlap.msa.tsv"
+  python "$dirname/../utils/errstats.py" --dedup --min-reads 3 --bam "$dirname/families.overlap.sscs.bam" \
+    "$dirname/families.overlap.msa.tsv" --overlap-stats "$dirname/overlaps.tmp.tsv" >/dev/null
+  diff -s "$dirname/overlaps.tmp.tsv" "$dirname/families.overlap.overlaps.expected.tsv"
+  if [[ -f "$dirname/overlaps.tmp.tsv" ]]; then
+    rm "$dirname/overlaps.tmp.tsv"
+  fi
 }
 
 main "$@"
