@@ -20,8 +20,6 @@ import pyBamParser.bam
 from lib import simplewrap
 import consensus
 
-ARG_DEFAULTS = {'input':sys.stdin, 'qual_thres':0, 'seed':0, 'min_reads':1, 'log':sys.stderr,
-                'volume':logging.ERROR}
 DESCRIPTION = """Tally statistics on errors in reads, compared to their (single-stranded) \
 consensus sequences. Output is one tab-delimited line per single-read alignment (one mate within \
 one strand (order) within one family (barcode)).
@@ -55,23 +53,23 @@ def make_argparser():
   # description of columns in the tsv output. But to still accommodate different
   # terminal widths, dynamic wrapping with simplewrap will be necessary.
   wrap = simplewrap.Wrapper().wrap
-
   parser = argparse.ArgumentParser(description=wrap(DESCRIPTION),
                                    formatter_class=argparse.RawDescriptionHelpFormatter)
-  parser.set_defaults(**ARG_DEFAULTS)
 
   parser.add_argument('input', metavar='families.msa.tsv', nargs='?', type=argparse.FileType('r'),
-    help='')
+    default=sys.stdin,
+    help='Aligned families (output of align_families.py). Omit to read from stdin.')
   parser.add_argument('-a', '--alignment', action='store_true',
     help='Print the full alignment, with consensus bases masked (to highlight errors).')
   parser.add_argument('-R', '--all-repeats', action='store_true',
     help='Output the full count of how many times each error recurred in each single-strand '
          'alignment.')
-  parser.add_argument('-r', '--min-reads', type=int,
-    help='Minimum number of reads to form a consensus (and thus get any statistics).')
-  parser.add_argument('-q', '--qual-thres', type=int,
-    help='PHRED quality threshold for consensus making. NOTE: This should be the same as was used '
-         'for producing the reads in the bam file, if provided!')
+  parser.add_argument('-r', '--min-reads', type=int, default=1,
+    help='Minimum number of reads to form a consensus (and thus get any statistics). '
+         'Default: %(default)s')
+  parser.add_argument('-q', '--qual-thres', type=int, default=0,
+    help='PHRED quality score threshold for consensus making. NOTE: This should be the same as was '
+         'used for producing the reads in the bam file, if provided! Default: %(default)s')
   parser.add_argument('-Q', '--qual-errors', action='store_true',
     help='Don\'t count errors with quality scores below the --qual-thres in the error counts.')
   parser.add_argument('-d', '--dedup', action='store_true',
@@ -79,7 +77,7 @@ def make_argparser():
          'that appear twice because of it. Requires --bam.')
   parser.add_argument('-b', '--bam',
     help='The final duplex consensus reads, aligned to a reference. Used to find overlaps.')
-  parser.add_argument('-s', '--seed', type=int,
+  parser.add_argument('-s', '--seed', type=int, default=0,
     help='The random seed. Used to choose which error to keep when deduplicating errors in '
          'overlaps. Default: %(default)s')
   parser.add_argument('-o', '--overlap-stats', type=argparse.FileType('w'),
@@ -87,9 +85,10 @@ def make_argparser():
          'overwrite any existing file.')
   parser.add_argument('-L', '--dedup-log', type=argparse.FileType('w'),
     help='Log overlap error deduplication to this file. Warning: Will overwrite any existing file.')
-  parser.add_argument('-l', '--log', type=argparse.FileType('w'),
+  parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  parser.add_argument('-S', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  parser.add_argument('-S', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
+    default=logging.ERROR)
   parser.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
   parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
 
