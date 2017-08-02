@@ -64,7 +64,11 @@ def main(argv):
 
   for famsize, exp_freqs in dists.items():
     # Calculate the observed and expected distributions.
-    total_errors = totals[famsize]
+    try:
+      total_errors = totals[famsize]
+    except KeyError:
+      logging.warning('famsize {} not found in observed counts.'.format(famsize))
+      continue
     exp_counts, obs_counts, exp_counts_filt, obs_counts_filt = calc_obs_exp(famsize,
                                                                             total_errors,
                                                                             counts,
