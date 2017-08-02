@@ -305,7 +305,7 @@ def print_overlap_stats(stats_fh, family_stats, barcode, num_seqs, min_reads):
       if num_seq < min_reads:
         continue
       stats = family_stats[order][mate]
-      columns = [barcode, order, mate]
+      columns = [barcode, order, mate+1]
       columns.append(stats['paired'])
       columns.append(stats['overlap_len'])
       columns.append(stats['non_overlap_len'])
@@ -539,7 +539,7 @@ def get_edges(pair):
   edges = [{}, {}]
   for mate in (0, 1):
     edges[mate]['start'] = pair[mate].get_position()
-    edges[mate]['end'] = pair[mate].get_end_position()
+    edges[mate]['end'] = pair[mate].get_end_position(one_based=False)
   overlap = {}
   overlap['start'] = max(edges[0]['start'], edges[1]['start'])
   overlap['end'] = min(edges[0]['end'], edges[1]['end'])
