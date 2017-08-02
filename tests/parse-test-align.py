@@ -56,6 +56,8 @@ def main(argv):
 
   ref_seq = None
   family_num = 0
+  pair_num = 0
+  first_mate = None
   last_family_char = None
   for line_raw in args.alignment:
     prefix = line_raw[:3]
@@ -70,14 +72,20 @@ def main(argv):
     elif prefix[0] == 'r':
       assert ref_seq is not None, line_raw
       mate = int(prefix[1])
+      if first_mate is None:
+        first_mate = mate
       family_char = prefix[2]
       if family_char != last_family_char:
         family_num += 1
+        pair_num = 0
+      if mate == first_mate:
+        pair_num += 1
       raw_seq, pos, direction = get_raw_seq(line)
       barcodes = get_barcodes(family_num, args.bar_len)
       final_seq = substitute_ref_bases(raw_seq, pos, ref_seq)
       if fq_files:
-        for line in format_read(final_seq, direction, mate, family_num, barcodes, const, qual_char):
+        for line in format_read(final_seq, direction, mate, family_num, pair_num, barcodes, const,
+                                qual_char):
           fq_files[mate-1].write(line+'\n')
       last_family_char = family_char
 
@@ -117,13 +125,13 @@ def get_barcodes(family_num, bar_len):
   return barcodes
 
 
-def format_read(seq, direction, mate, family_num, barcodes, const, qual_char):
+def format_read(seq, direction, mate, family_num, pair_num, barcodes, const, qual_char):
   # Read name (line 1):
   if (direction == 'forward' and mate == 1) or (direction == 'reverse' and mate == 2):
     order = 'ab'
   else:
     order = 'ba'
-  yield '@pair{}.{} mate{}'.format(family_num, order, mate)
+  yield '@fam{}.{}.pair{} mate{}'.format(family_num, order, pair_num, mate)
   # Read sequence (line 2):
   if order == 'ab':
     barcodes_ordered = barcodes
