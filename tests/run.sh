@@ -23,6 +23,8 @@ function main {
           echo "$USAGE" >&2
           echo "Currently valid tests:" >&2
           list_tests >&2
+          echo "Meta tests:" >&2
+          list_meta_tests >&2
           exit 1;;
         -q)
           verbose='';;
@@ -65,10 +67,20 @@ function fail {
 function list_tests {
   while read declare f test; do
     # Filter out functions that aren't tests.
-    if echo "$initial_declarations" | grep -qF 'declare -f '"$test"; then
+    if echo "$initial_declarations_plus_meta" | grep -qF "declare -f $test"; then
       continue
     else
-      echo "$test"
+      echo "  $test"
+    fi
+  done < <(declare -F)
+}
+
+function list_meta_tests {
+  while read declare f test; do
+    if echo "$initial_declarations" | grep -qF "declare -f $test"; then
+      continue
+    elif echo "$initial_declarations_plus_meta" | grep -qF "declare -f $test"; then
+      echo "  $test"
     fi
   done < <(declare -F)
 }
@@ -77,19 +89,25 @@ function list_tests {
 # and which are tests.
 initial_declarations=$(declare -F)
 
-########## Functional tests ##########
+########## Meta tests ##########
 
-# Do all tests.
+# Run all tests.
 function all {
-  barcodes
-  align
-  align_p3
-  duplex
-  duplex_qual
-  stats_diffs
-  errstats
+  for test in $(list_tests); do
+    $test
+  done
+}
+
+# Run the errstats.py-specific tests.
+function errstats {
+  errstats_simple
   errstats_overlap
 }
+
+# Get the list of functions now that the meta tests have been declared.
+initial_declarations_plus_meta=$(declare -F)
+
+########## Functional tests ##########
 
 # make-barcodes.awk
 function barcodes {
@@ -135,7 +153,7 @@ function stats_diffs {
   python "$dirname/../utils/stats.py" diffs "$dirname/gaps.msa.tsv" | diff -s - "$dirname/gaps-diffs.out.tsv"
 }
 
-function errstats {
+function errstats_simple {
   echo -e "\terrstats.py ::: families.msa.tsv:"
   python "$dirname/../utils/errstats.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.out.tsv"
   python "$dirname/../utils/errstats.py" -R "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.out.tsv"
