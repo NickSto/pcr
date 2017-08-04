@@ -21,7 +21,7 @@ try:
 except ImportError:
   pass
 from lib import simplewrap
-import consensus
+import consensus as consensuslib
 
 REVCOMP_MAP = {'a':'t', 'c':'g', 'g':'c', 't':'a', 'r':'y', 'y':'r', 'm':'k', 'k':'m', 'b':'v',
                'd':'h', 'h':'d', 'v':'b', 'A':'T', 'C':'G', 'G':'C', 'T':'A', 'R':'Y', 'Y':'R',
@@ -127,23 +127,37 @@ def main(argv):
   family_stats = {}
   for family in parse_families(args.input):
     barcode = family['bar']
-    num_seqs = get_family_stat(family, get_num_seqs)
-    consensi = get_family_stat(family, get_consensus, args.qual_thres)
-    errors = get_family_stat(family, get_family_errors, consensi, error_qual_thres)
-    overlap = get_family_stat(family, lambda a, b, c, d: collections.defaultdict(int))
     if args.dedup:
-      family_stats[barcode] = collate_stats(consensi, errors, num_seqs, overlap)
-    else:
-      print_errors(errors, barcode, num_seqs, args.all_repeats, args.min_reads, args.alignment,
-                   consensi, family)
+      family_stats[barcode] = {'ab':[{}, {}], 'ba':[{}, {}]}
+    for order in ('ab', 'ba'):
+      for mate in (0, 1):
+        seq_align, qual_align = family[order][mate]
+        num_seqs = len(seq_align)
+        consensus = get_consensus(seq_align, qual_align, args.qual_thres)
+        error_types = get_family_errors(seq_align, qual_align, consensus, error_qual_thres)
+        overlap = collections.defaultdict(int)
+        if args.dedup:
+          family_stats[barcode][order][mate] = {'num_seqs':num_seqs,
+                                                'consensus':consensus,
+                                                'errors':error_types,
+                                                'overlap':overlap}
+        elif num_seqs >= args.min_reads:
+          print_errors(barcode, order, mate, error_types, num_seqs, args.all_repeats,
+                       args.alignment, seq_align, qual_align, consensus, family)
 
   if args.dedup:
     logging.info('Deduplicating errors in overlaps..')
     dedup_all_errors(args.bam, family_stats, args.dedup_log)
     for barcode in family_stats:
-      consensi, errors, num_seqs, overlap = uncollate_stats(family_stats[barcode])
-      print_errors(errors, barcode, num_seqs, args.all_repeats, args.min_reads)
-      print_overlap_stats(args.overlap_stats, overlap, barcode, num_seqs, args.min_reads)
+      for order in ('ab', 'ba'):
+        for mate in (0, 1):
+          family_stat = family_stats[barcode][order][mate]
+          if family_stat['num_seqs'] < args.min_reads:
+            continue
+          print_errors(barcode, order, mate, family_stat['errors'], family_stat['num_seqs'],
+                       args.all_repeats)
+          if args.overlap_stats:
+            print_overlap_stats(barcode, order, mate, args.overlap_stats, family_stat['overlap'])
 
 
 def parse_families(infile):
@@ -190,23 +204,7 @@ def parse_families(infile):
   yield family
 
 
-def get_family_stat(family, stat_fxn, *args, **kwargs):
-  """Common function for going through the four alignments in each family (+/- strand, 1st/2nd mate)
-  and calculating a statistic on each.
-  Pass in a function which takes the fixed arguments seq_align, qual_align, order, and mate,
-  plus whatever custom ones you want after that. The arguments to this function that come after the
-  stat function will be passed directly to the stat function.
-  Returns a data structure like that from parse_families(), but family[order][mate] == the stat you
-  requested (the output of the given function)."""
-  stats = {'ab':[None, None], 'ba':[None, None]}
-  for order in ('ab', 'ba'):
-    for mate in (0, 1):
-      seq_align, qual_align = family[order][mate]
-      stats[order][mate] = stat_fxn(seq_align, qual_align, order, mate, *args, **kwargs)
-  return stats
-
-
-def get_consensus(seq_align, qual_align, order, mate, qual_thres):
+def get_consensus(seq_align, qual_align, qual_thres):
   """Wrapper around consensus.get_consensus().
   When running under Python 3, this encodes strings passed to it as bytes and decodes its return
   value into str."""
@@ -220,10 +218,10 @@ def get_consensus(seq_align, qual_align, order, mate, qual_thres):
     seqs_bytes = seq_align
     quals_bytes = qual_align
     qual_thres_byte = chr(qual_thres+32)
-  cons_bytes = consensus.get_consensus(seqs_bytes,
-                                       quals_bytes,
-                                       qual_thres=qual_thres_byte,
-                                       gapped=True)
+  cons_bytes = consensuslib.get_consensus(seqs_bytes,
+                                          quals_bytes,
+                                          qual_thres=qual_thres_byte,
+                                          gapped=True)
   if sys.version_info.major == 3:
     cons_seq = str(cons_bytes, 'utf8')
   else:
@@ -231,94 +229,46 @@ def get_consensus(seq_align, qual_align, order, mate, qual_thres):
   return cons_seq
 
 
-def get_num_seqs(seq_align, qual_align, order, mate):
-  return len(seq_align)
-
-
-def get_family_errors(seq_align, qual_align, order, mate, consensi, qual_thres):
+def get_family_errors(seq_align, qual_align, consensus, qual_thres):
   if not (seq_align and qual_align):
     return None
-  consensus_seq = consensi[order][mate]
-  errors = get_alignment_errors(consensus_seq, seq_align, qual_align, qual_thres)
+  errors = get_alignment_errors(consensus, seq_align, qual_align, qual_thres)
   error_types = group_errors(errors)
   return list(error_types)
 
 
-def collate_stats(consensi, errors, num_seqs, overlap):
-  stats = {'ab':[None, None], 'ba':[None, None]}
-  for order in ('ab', 'ba'):
-    for mate in (0, 1):
-      stats[order][mate] = {
-        'consensus': consensi[order][mate],
-        'errors': errors[order][mate],
-        'num_seqs': num_seqs[order][mate],
-        'overlap': overlap[order][mate],
-      }
-  return stats
+def print_errors(barcode, order, mate, error_types, num_seqs, all_repeats, print_alignment=False,
+                 seq_align=None, qual_align=None, consensus=None, family=None):
+  errors_per_seq, repeated_errors, error_repeat_counts = tally_errors(error_types, num_seqs)
+  if print_alignment:
+    masked_alignment = mask_alignment(seq_align, error_types)
+    for seq, seq_errors in zip(masked_alignment, errors_per_seq):
+      print('{} errors: {}'.format(seq, seq_errors))
+    if all_repeats:
+      print('{} errors: {}, repeat errors: {}\n'.format(consensus,
+                                                        sum(errors_per_seq),
+                                                        ', '.join(map(str, error_repeat_counts))))
+    else:
+      print('{} errors: {}, repeat errors: {}\n'.format(consensus,
+                                                        sum(errors_per_seq),
+                                                        repeated_errors))
+  elif all_repeats:
+    print(barcode, order, mate, num_seqs, *error_repeat_counts, sep='\t')
+  else:
+    print(barcode, order, mate, num_seqs, repeated_errors, *errors_per_seq, sep='\t')
 
 
-def uncollate_stats(stats):
-  consensi = {'ab':[None, None], 'ba':[None, None]}
-  errors = {'ab':[None, None], 'ba':[None, None]}
-  num_seqs = {'ab':[None, None], 'ba':[None, None]}
-  overlap = {'ab':[None, None], 'ba':[None, None]}
-  for order in ('ab', 'ba'):
-    for mate in (0, 1):
-      consensi[order][mate] = stats[order][mate]['consensus']
-      errors[order][mate] = stats[order][mate]['errors']
-      num_seqs[order][mate] = stats[order][mate]['num_seqs']
-      overlap[order][mate] = stats[order][mate]['overlap']
-  return consensi, errors, num_seqs, overlap
-
-
-def print_errors(family_errors, barcode, num_seqs, all_repeats, min_reads=1, print_alignment=False,
-                 consensi=None, family=None):
-  for order in ('ab', 'ba'):
-    for mate in (0, 1):
-      num_seq = num_seqs[order][mate]
-      if num_seq < min_reads:
-        continue
-      error_types = family_errors[order][mate]
-      errors_per_seq, repeated_errors, error_repeat_counts = tally_errors(error_types, num_seq)
-      if print_alignment:
-        consensus_seq = consensi[order][mate]
-        seq_align, qual_align = family[order][mate]
-        masked_alignment = mask_alignment(seq_align, error_types)
-        for seq, seq_errors in zip(masked_alignment, errors_per_seq):
-          print('{} errors: {}'.format(seq, seq_errors))
-        if all_repeats:
-          print('{} errors: {}, repeat errors: {}\n'.format(consensus_seq,
-                                                            sum(errors_per_seq),
-                                                            ', '.join(map(str, error_repeat_counts))))
-        else:
-          print('{} errors: {}, repeat errors: {}\n'.format(consensus_seq,
-                                                            sum(errors_per_seq),
-                                                            repeated_errors))
-      elif all_repeats:
-        print(barcode, order, mate, num_seq, *error_repeat_counts, sep='\t')
-      else:
-        print(barcode, order, mate, num_seq, repeated_errors, *errors_per_seq, sep='\t')
-
-
-def print_overlap_stats(stats_fh, family_stats, barcode, num_seqs, min_reads):
-  if not stats_fh:
-    return
-  for order in ('ab', 'ba'):
-    for mate in (0, 1):
-      num_seq = num_seqs[order][mate]
-      if num_seq < min_reads:
-        continue
-      stats = family_stats[order][mate]
-      columns = [barcode, order, mate+1]
-      columns.append(stats['paired'])
-      columns.append(stats['overlap_len'])
-      columns.append(stats['non_overlap_len'])
-      columns.append(stats['overlap_errors'])
-      non_overlap_errors = stats['total_errors'] - stats['overlap_errors'] - stats['nonref_errors']
-      columns.append(non_overlap_errors)
-      columns.append(stats['nonref_errors'])
-      columns.append(stats['duplicates'])
-      stats_fh.write('\t'.join(map(str, columns))+'\n')
+def print_overlap_stats(barcode, order, mate, stats_fh, stats):
+  columns = [barcode, order, mate+1]
+  columns.append(stats['paired'])
+  columns.append(stats['overlap_len'])
+  columns.append(stats['non_overlap_len'])
+  columns.append(stats['overlap_errors'])
+  non_overlap_errors = stats['total_errors'] - stats['overlap_errors'] - stats['nonref_errors']
+  columns.append(non_overlap_errors)
+  columns.append(stats['nonref_errors'])
+  columns.append(stats['duplicates'])
+  stats_fh.write('\t'.join(map(str, columns))+'\n')
 
 
 def get_alignment_errors(consensus_seq, seq_align, qual_align, qual_thres):
