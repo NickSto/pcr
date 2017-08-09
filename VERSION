@@ -1,4 +1,4 @@
 [version]
 project = dunovo
 version_num = 0.7.3
-#stage = alpha
+stage = alpha
