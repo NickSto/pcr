@@ -199,10 +199,7 @@ def open_workers(num_workers, args):
   script_path = os.path.realpath(sys.argv[0])
   workers = []
   for i in range(num_workers):
-    if args.slurm:
-      command = ['srun', '-C', 'new', 'python', script_path]
-    else:
-      command = ['python', script_path]
+    command = ['python', script_path]
     arguments = gather_args(sys.argv, args.infile)
     command.extend(arguments)
     stats_subfile = None
@@ -219,7 +216,7 @@ def open_workers(num_workers, args):
   return workers
 
 
-def gather_args(args, infile, excluded_flags={'-S', '--slurm'},
+def gather_args(args, infile, excluded_flags={},
                 excluded_args={'-p', '--processes', '-l', '--log', '-s', '--sscs-file'}):
   """Take the full list of command-line arguments and return only the ones which
   should be passed to worker processes.
