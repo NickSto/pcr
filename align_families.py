@@ -3,6 +3,7 @@ from __future__ import division
 import os
 import sys
 import time
+import logging
 import tempfile
 import argparse
 import subprocess
@@ -21,7 +22,7 @@ import seqtools
 #      produce pretty weird results.
 
 REQUIRED_COMMANDS = ['mafft']
-OPT_DEFAULTS = {'processes':1}
+OPT_DEFAULTS = {'processes':1, 'log_file':sys.stderr, 'volume':logging.ERROR}
 DESCRIPTION = """Read in sorted FASTQ data and do multiple sequence alignments of each family."""
 
 
@@ -59,10 +60,18 @@ def main(argv):
               'when phoning home.'))
   parser.add_argument('--test', action='store_true',
     help=wrap('If reporting usage data, mark this as a test run.'))
-  parser.add_argument('-v', '--version', action='version', version=str(version.get_version()),
+  parser.add_argument('--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
+  parser.add_argument('-L', '--log-file', type=argparse.FileType('w'),
+    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+  parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  parser.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
+  parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
 
   args = parser.parse_args(argv[1:])
+
+  logging.basicConfig(stream=args.log_file, level=args.volume, format='%(message)s')
+  tone_down_logger()
 
   start_time = time.time()
   if args.phone_home:
@@ -125,8 +134,8 @@ def main(argv):
       # If the barcode is different, we're at the end of the whole duplex. Process the it and start
       # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
       if this_barcode != barcode:
-        # sys.stderr.write('processing {}: {} orders ({})\n'.format(barcode, len(duplex),
-        #                  '/'.join([str(len(duplex[order])) for order in duplex])))
+        # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
+        #               '/'.join([str(len(duplex[o])) for o in duplex])))
         output, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode)
         process_results(output, run_stats, stats)
         duplex = collections.OrderedDict()
@@ -138,8 +147,8 @@ def main(argv):
     stats['pairs'] += 1
   # Process the last family.
   duplex[order] = family
-  # sys.stderr.write('processing {}: {} orders ({}) [last]\n'.format(barcode, len(duplex),
-  #                  '/'.join([str(len(duplex[order])) for order in duplex])))
+  # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
+  #               '/'.join([str(len(duplex[o])) for o in duplex])))
   output, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode)
   process_results(output, run_stats, stats)
 
@@ -160,12 +169,12 @@ def main(argv):
   run_time = int(end_time - start_time)
 
   # Final stats on the run.
-  sys.stderr.write('Processed {pairs} read pairs in {duplexes} duplexes.\n'.format(**stats))
+  logging.error('Processed {pairs} read pairs in {duplexes} duplexes.'.format(**stats))
   if stats['aligned_pairs'] > 0:
     per_pair = stats['time'] / stats['aligned_pairs']
     per_run = stats['time'] / stats['runs']
-    sys.stderr.write('{:0.3f}s per pair, {:0.3f}s per run.\n'.format(per_pair, per_run))
-    sys.stderr.write('{}s total time.\n'.format(run_time))
+    logging.error('{:0.3f}s per pair, {:0.3f}s per run.'.format(per_pair, per_run))
+    logging.error('{}s total time.'.format(run_time))
 
   if args.phone_home:
     stats['align_time'] = stats['time']
@@ -212,7 +221,7 @@ def delegate(workers, stats, duplex, barcode):
   else:
     output, run_stats = '', {}
   if output is None and run_stats is None:
-    sys.stderr.write('Worker {} died.\n'.format(worker['process'].name))
+    logging.warning('Worker {} died.'.format(worker['process'].name))
     worker = open_worker()
     workers[worker_i] = worker
     output, run_stats = '', {}
@@ -243,24 +252,24 @@ def process_duplex(duplex, barcode):
     start = time.time()
     try:
       alignment = align_family(family, mate)
-    except AssertionError:
-      sys.stderr.write('AssertionError on family {}, order {}, mate {}.\n'
-                       .format(barcode, order, mate))
+    except AssertionError as error:
+      logging.critical('AssertionError on family {}, order {}, mate {}:\n{}.'
+                       .format(barcode, order, mate, error))
       raise
     except (OSError, subprocess.CalledProcessError) as error:
-      sys.stderr.write('{} on family {}, order {}, mate {}:\n{}\n'
-                       .format(type(error).__name__, barcode, order, mate, error))
+      logging.warning('{} on family {}, order {}, mate {}:\n{}'
+                      .format(type(error).__name__, barcode, order, mate, error))
       pass
     # Compile statistics.
     elapsed = time.time() - start
     pairs = len(family)
-    #logging.info('{} sec for {} read pairs.'.format(elapsed, pairs))
+    logging.info('{} sec for {} read pairs.'.format(elapsed, pairs))
     if pairs > 1:
       run_stats['time'] += elapsed
       run_stats['runs'] += 1
       run_stats['aligned_pairs'] += pairs
     if alignment is None:
-      pass  #logging.warning('Error aligning family {}/{} (read {}).'.format(barcode, order, mate))
+      logging.warning('Error aligning family {}/{} (read {}).'.format(barcode, order, mate))
     else:
       output += format_msa(alignment, barcode, order, mate)
   return output, run_stats
@@ -360,6 +369,14 @@ def process_results(output, run_stats, stats):
     stats[key] += value
   if output:
     sys.stdout.write(output)
+
+
+def tone_down_logger():
+  """Change the logging level names from all-caps to capitalized lowercase.
+  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
+  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
+    level_name = logging.getLevelName(level)
+    logging.addLevelName(level, level_name.capitalize())
 
 
 def fail(message):
