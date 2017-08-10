@@ -116,7 +116,7 @@ def main(argv):
   e.g.:
   seq = duplex[order][pair_num]['seq1']
   """
-  stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'aligned_pairs':0}
+  stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
   current_worker_i = 0
   duplex = collections.OrderedDict()
   family = []
@@ -169,12 +169,13 @@ def main(argv):
   run_time = int(end_time - start_time)
 
   # Final stats on the run.
-  logging.error('Processed {pairs} read pairs in {duplexes} duplexes.'.format(**stats))
+  logging.error('Processed {pairs} read pairs in {duplexes} duplexes, with {failures} alignment '
+                'failures.'.format(**stats))
   if stats['aligned_pairs'] > 0 and stats['runs'] > 0:
     per_pair = stats['time'] / stats['aligned_pairs']
     per_run = stats['time'] / stats['runs']
     logging.error('{:0.3f}s per pair, {:0.3f}s per run.'.format(per_pair, per_run))
-  logging.error('{}s total time.'.format(run_time))
+  logging.error('in {}s total time.'.format(run_time))
 
   if args.phone_home:
     stats['align_time'] = stats['time']
@@ -270,6 +271,7 @@ def process_duplex(duplex, barcode):
       run_stats['aligned_pairs'] += pairs
     if alignment is None:
       logging.warning('Error aligning family {}/{} (read {}).'.format(barcode, order, mate))
+      run_stats['failures'] += 1
     else:
       output += format_msa(alignment, barcode, order, mate)
   return output, run_stats
