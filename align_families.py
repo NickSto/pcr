@@ -170,11 +170,11 @@ def main(argv):
 
   # Final stats on the run.
   logging.error('Processed {pairs} read pairs in {duplexes} duplexes.'.format(**stats))
-  if stats['aligned_pairs'] > 0:
+  if stats['aligned_pairs'] > 0 and stats['runs'] > 0:
     per_pair = stats['time'] / stats['aligned_pairs']
     per_run = stats['time'] / stats['runs']
     logging.error('{:0.3f}s per pair, {:0.3f}s per run.'.format(per_pair, per_run))
-    logging.error('{}s total time.'.format(run_time))
+  logging.error('{}s total time.'.format(run_time))
 
   if args.phone_home:
     stats['align_time'] = stats['time']

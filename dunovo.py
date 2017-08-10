@@ -182,9 +182,10 @@ def main(argv):
   # Final stats on the run.
   logging.info('Processed {} reads and {} duplexes in {} seconds.'
                .format(all_reads, stats['runs'], run_time))
-  per_read = stats['time'] / stats['reads']
-  per_run = stats['time'] / stats['runs']
-  logging.info('{:0.3f}s per read, {:0.3f}s per run.'.format(per_read, per_run))
+  if stats['reads'] > 0 and stats['runs'] > 0:
+    per_read = stats['time'] / stats['reads']
+    per_run = stats['time'] / stats['runs']
+    logging.info('{:0.3f}s per read, {:0.3f}s per run.'.format(per_read, per_run))
 
   if args.phone_home:
     stats['consensus_time'] = stats['time']
