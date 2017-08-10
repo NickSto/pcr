@@ -247,6 +247,10 @@ def process_duplex(duplex, barcode):
       sys.stderr.write('AssertionError on family {}, order {}, mate {}.\n'
                        .format(barcode, order, mate))
       raise
+    except (OSError, subprocess.CalledProcessError) as error:
+      sys.stderr.write('{} on family {}, order {}, mate {}:\n{}\n'
+                       .format(type(error).__name__, barcode, order, mate, error))
+      pass
     # Compile statistics.
     elapsed = time.time() - start
     pairs = len(family)
@@ -305,8 +309,10 @@ def make_msa(family, mate):
       command = ['mafft', '--nuc', '--quiet', family_file.name]
       output = subprocess.check_output(command, stderr=devnull)
     except (OSError, subprocess.CalledProcessError):
-      return None
-  os.remove(family_file.name)
+      raise
+    finally:
+      # Make sure we delete the temporary file.
+      os.remove(family_file.name)
   return read_fasta(output, is_file=False, upper=True)
 
 
