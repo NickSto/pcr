@@ -259,7 +259,7 @@ def process_duplex(duplex, barcode):
     except (OSError, subprocess.CalledProcessError) as error:
       logging.warning('{} on family {}, order {}, mate {}:\n{}'
                       .format(type(error).__name__, barcode, order, mate, error))
-      pass
+      alignment = None
     # Compile statistics.
     elapsed = time.time() - start
     pairs = len(family)
