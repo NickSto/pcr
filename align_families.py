@@ -10,10 +10,24 @@ import subprocess
 import collections
 import multiprocessing
 import distutils.spawn
-from lib import simplewrap
-from lib import version
-from ET import phone
 import seqtools
+import shims
+# There can be problems with the submodules, but none are essential.
+try:
+  from lib import simplewrap
+except ImportError:
+  sys.stderr.write('Error importing module lib.simplewrap. Some functionality may be missing.\n')
+  simplewrap = shims.simplewrap()
+try:
+  from lib import version
+except ImportError:
+  sys.stderr.write('Error importing module lib.version. Some functionality may be missing.\n')
+  version = shims.version()
+try:
+  from ET import phone
+except ImportError:
+  sys.stderr.write('Error importing module ET.phone. Some functionality may be missing.\n')
+  phone = shims.phone()
 
 #TODO: Warn if it looks like the two input FASTQ files are the same (i.e. the _1 file was given
 #      twice). Can tell by whether the alpha and beta (first and last 12bp) portions of the barcodes

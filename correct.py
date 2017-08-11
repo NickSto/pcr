@@ -10,9 +10,19 @@ import argparse
 import resource
 import subprocess
 import networkx
-from lib import version
-from ET import phone
 import swalign
+import shims
+# There can be problems with the submodules, but none are essential.
+try:
+  from lib import version
+except ImportError:
+  sys.stderr.write('Error importing module lib.version. Some functionality may be missing.\n')
+  version = shims.version()
+try:
+  from ET import phone
+except ImportError:
+  sys.stderr.write('Error importing module ET.phone. Some functionality may be missing.\n')
+  phone = shims.phone()
 
 VERBOSE = (logging.DEBUG+logging.INFO)//2
 ARG_DEFAULTS = {'sam':sys.stdin, 'mapq':20, 'pos':2, 'dist':1, 'choose_by':'count', 'output':True,
@@ -61,7 +71,7 @@ def main(argv):
     help='Print a list of the unique isoforms')
   parser.add_argument('--struct-human', action='store_true')
   parser.add_argument('-V', '--visualize', nargs='?',
-    help='Produce a visualization of the unique structures write the image to this file. '
+    help='Produce a visualization of the unique structures and write the image to this file. '
          'If you omit a filename, it will be displayed in a window.')
   parser.add_argument('-F', '--viz-format', choices=('dot', 'graphviz', 'png'))
   parser.add_argument('-n', '--no-output', dest='output', action='store_false')

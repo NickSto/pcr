@@ -8,11 +8,25 @@ import tempfile
 import argparse
 import subprocess
 import collections
-from lib import simplewrap
-from lib import version
-from ET import phone
 import consensus
 import swalign
+import shims
+# There can be problems with the submodules, but none are essential.
+try:
+  from lib import simplewrap
+except ImportError:
+  sys.stderr.write('Error importing module lib.simplewrap. Some functionality may be missing.\n')
+  simplewrap = shims.simplewrap()
+try:
+  from lib import version
+except ImportError:
+  sys.stderr.write('Error importing module lib.version. Some functionality may be missing.\n')
+  version = shims.version()
+try:
+  from ET import phone
+except ImportError:
+  sys.stderr.write('Error importing module ET.phone. Some functionality may be missing.\n')
+  phone = shims.phone()
 
 SANGER_START = 33
 SOLEXA_START = 64
