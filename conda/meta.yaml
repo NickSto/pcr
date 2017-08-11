@@ -33,6 +33,8 @@ test:
     - 'correct.py -h > /dev/null'
     - 'align_families.py -h > /dev/null'
     - 'dunovo.py -h > /dev/null'
+  imports:
+    - networkx
 
 about:
   home: https://github.com/galaxyproject/dunovo
