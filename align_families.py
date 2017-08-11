@@ -14,14 +14,14 @@ import seqtools
 import shims
 # There can be problems with the submodules, but none are essential.
 try:
-  from lib import simplewrap
+  from utillib import simplewrap
 except ImportError:
-  sys.stderr.write('Error importing module lib.simplewrap. Some functionality may be missing.\n')
+  sys.stderr.write('Error importing module utillib.simplewrap. Some functionality may be missing.\n')
   simplewrap = shims.simplewrap()
 try:
-  from lib import version
+  from utillib import version
 except ImportError:
-  sys.stderr.write('Error importing module lib.version. Some functionality may be missing.\n')
+  sys.stderr.write('Error importing module utillib.version. Some functionality may be missing.\n')
   version = shims.version()
 try:
   from ET import phone

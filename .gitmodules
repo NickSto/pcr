@@ -1,6 +1,6 @@
 [submodule "lib"]
-	path = lib
-	url = https://github.com/NickSto/lib.git
+	path = utillib
+	url = https://github.com/NickSto/utillib.git
 [submodule "ET"]
 	path = ET
 	url = https://github.com/NickSto/ET.git
