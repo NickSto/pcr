@@ -2,7 +2,7 @@
 <tool id="dunovo" name="Du Novo: Make consensus reads" version="0.7">
   <description>from duplex sequencing alignments</description>
   <requirements>
-    <requirement type="package" version="0.7.1">dunovo</requirement>
+    <requirement type="package" version="0.7.4">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
   <command detect_errors="exit_code">dunovo.sh -r $min_reads -q $qual_thres -F $qual_format '$input' '$dcs1' '$dcs2'
