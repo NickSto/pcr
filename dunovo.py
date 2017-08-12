@@ -12,21 +12,10 @@ import consensus
 import swalign
 import shims
 # There can be problems with the submodules, but none are essential.
-try:
-  from utillib import simplewrap
-except ImportError:
-  sys.stderr.write('Error importing module utillib.simplewrap. Some functionality may be missing.\n')
-  simplewrap = shims.simplewrap()
-try:
-  from utillib import version
-except ImportError:
-  sys.stderr.write('Error importing module utillib.version. Some functionality may be missing.\n')
-  version = shims.version()
-try:
-  from ET import phone
-except ImportError:
-  sys.stderr.write('Error importing module ET.phone. Some functionality may be missing.\n')
-  phone = shims.phone()
+# Try to load these modules, but if there's a problem, load a harmless dummy and continue.
+simplewrap = shims.get_module_or_shim('utillib.simplewrap')
+version = shims.get_module_or_shim('utillib.version')
+phone = shims.get_module_or_shim('ET.phone')
 
 SANGER_START = 33
 SOLEXA_START = 64

@@ -13,16 +13,9 @@ import networkx
 import swalign
 import shims
 # There can be problems with the submodules, but none are essential.
-try:
-  from utillib import version
-except ImportError:
-  sys.stderr.write('Error importing module utillib.version. Some functionality may be missing.\n')
-  version = shims.version()
-try:
-  from ET import phone
-except ImportError:
-  sys.stderr.write('Error importing module ET.phone. Some functionality may be missing.\n')
-  phone = shims.phone()
+# Try to load these modules, but if there's a problem, load a harmless dummy and continue.
+version = shims.get_module_or_shim('utillib.version')
+phone = shims.get_module_or_shim('ET.phone')
 
 VERBOSE = (logging.DEBUG+logging.INFO)//2
 ARG_DEFAULTS = {'sam':sys.stdin, 'mapq':20, 'pos':2, 'dist':1, 'choose_by':'count', 'output':True,

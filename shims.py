@@ -1,4 +1,7 @@
+import sys
+import importlib
 """Stub versions of optional submodules which may fail to clone."""
+
 
 class version(object):
   def __init__(self):
@@ -37,3 +40,22 @@ class phone(object):
                platform=None,
                test=False):
     pass
+
+
+def get_module_or_shim(module_path):
+  """Load the given module, or if not possible, return a stub."""
+  try:
+    return importlib.import_module(module_path)
+  except ImportError:
+    sys.stderr.write('Error importing module '+module_path+'. Some functionality may be missing.\n')
+  module_name = module_path.split('.')[-1]
+  try:
+    shim = globals()[module_name]
+  except KeyError:
+    sys.stderr.write('Error: cannot find a shim named "'+module_name+'".\n')
+    raise
+  try:
+    return shim()
+  except TypeError:
+    sys.stderr.write('Error: problem loading shim "'+module_name+'".\n')
+    raise
