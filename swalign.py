@@ -8,11 +8,9 @@ LIBFILE = 'libswalign.so'
 script_dir = os.path.dirname(os.path.realpath(__file__))
 library_path = os.path.join(script_dir, LIBFILE)
 if not os.path.isfile(library_path):
-  library_path = os.path.join(script_dir, '..', 'lib', LIBFILE)
-  if not os.path.isfile(library_path):
-    ioe = IOError('Library file "'+LIBFILE+'" not found.')
-    ioe.errno = errno.ENOENT
-    raise ioe
+  ioe = IOError('Library file "'+LIBFILE+'" not found.')
+  ioe.errno = errno.ENOENT
+  raise ioe
 
 swalign = ctypes.cdll.LoadLibrary(library_path)
 
