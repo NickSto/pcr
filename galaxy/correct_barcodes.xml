@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<tool id="correct_barcodes" name="Du Novo: Correct barcodes" version="0.7">
+<tool id="correct_barcodes" name="Du Novo: Correct barcodes" version="0.7.1">
   <description>of duplex sequencing reads</description>
   <requirements>
     <requirement type="package" version="2.2.5">bowtie2</requirement>
@@ -8,13 +8,14 @@
     <requirement type="package" version="0.7.4">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
-  <command detect_errors="exit_code">correct-barcodes.sh -d $dist -m $mapq -p $pos '$input' &gt; '$output'
+  <command detect_errors="exit_code">correct-barcodes.sh --galaxy $phone -d $dist -m $mapq -p $pos '$input' &gt; '$output'
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Input reads" help="with barcodes, grouped by family"/>
     <param name="dist" type="integer" value="1" min="1" label="Maximum edit distance" help="Only use alignments where the barcodes differ by at most these many errors."/>
     <param name="mapq" type="integer" value="20" min="0" label="Minimum mapping quality" help="Only use alignments whose MAPQ is at least this."/>
     <param name="pos" type="integer" value="2" min="0" label="Minimum start offset" help="Ignore alignments where the start positions differ by more than this."/>
+    <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send anonymous usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the time taken to process it, and the IP address of the machine running it. No parameters or filenames are sent."/>
   </inputs>
   <outputs>
     <data name="output" format="tabular"/>
