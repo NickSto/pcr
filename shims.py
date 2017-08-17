@@ -28,7 +28,8 @@ class phone(object):
                  domain=None,
                  secure=None,
                  platform=None,
-                 test=False):
+                 test=False,
+                 fail='warn'):
     pass
   def send_end(script_path,
                version,
@@ -38,7 +39,8 @@ class phone(object):
                domain=None,
                secure=None,
                platform=None,
-               test=False):
+               test=False,
+               fail='warn'):
     pass
 
 

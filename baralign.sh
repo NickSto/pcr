@@ -20,7 +20,7 @@ function main {
   while getopts ":rh" opt; do
   case "$opt" in
       r) reverse='';;
-      h) fail "$USAGE";;
+      h) fail "$Usage";;
     esac
   done
   # Get positional arguments.
