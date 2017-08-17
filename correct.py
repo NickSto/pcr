@@ -96,7 +96,8 @@ def main(argv):
 
   start_time = time.time()
   if args.phone_home:
-    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform, test=args.test)
+    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
+                              test=args.test, fail='warn')
 
   logging.info('Reading the fasta/q to map read names to barcodes..')
   names_to_barcodes = map_names_to_barcodes(args.reads, args.limit)
@@ -135,7 +136,7 @@ def main(argv):
     run_data = {'barcodes':len(names_to_barcodes), 'good_alignments':num_good_alignments,
                 'read_pairs':read_pairs, 'max_mem':int(max_mem)}
     phone.send_end(__file__, version.get_version(), run_id, run_time, run_data,
-                   platform=args.platform, test=args.test)
+                   platform=args.platform, test=args.test, fail='warn')
 
 
 def detect_format(reads_file, max_lines=7):

@@ -25,7 +25,7 @@ phone = shims.get_module_or_shim('ET.phone')
 #      produce pretty weird results.
 
 REQUIRED_COMMANDS = ['mafft']
-OPT_DEFAULTS = {'processes':1, 'log_file':sys.stderr, 'volume':logging.ERROR}
+OPT_DEFAULTS = {'processes':1, 'log_file':sys.stderr, 'volume':logging.WARNING}
 DESCRIPTION = """Read in sorted FASTQ data and do multiple sequence alignments of each family."""
 
 
@@ -78,7 +78,8 @@ def main(argv):
 
   start_time = time.time()
   if args.phone_home:
-    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform, test=args.test)
+    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
+                              test=args.test, fail='warn')
 
   assert args.processes > 0, '-p must be greater than zero'
 
@@ -184,7 +185,7 @@ def main(argv):
     stats['align_time'] = stats['time']
     del stats['time']
     phone.send_end(__file__, version.get_version(), run_id, run_time, stats, platform=args.platform,
-                   test=args.test)
+                   test=args.test, fail='warn')
 
 
 def open_workers(num_workers):

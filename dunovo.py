@@ -95,7 +95,8 @@ def main(argv):
 
   start_time = time.time()
   if args.phone_home:
-    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform, test=args.test)
+    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
+                              test=args.test, fail='warn')
 
   assert args.processes > 0, '-p must be greater than zero'
   # Make dict of process_family() parameters that don't change between families.
@@ -119,9 +120,9 @@ def main(argv):
 
   if args.stats_file:
     if args.stats_file == '-':
-      logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(message)s')
+      logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format='%(message)s')
     else:
-      logging.basicConfig(filename=args.stats_file, filemode='w', level=logging.INFO,
+      logging.basicConfig(filename=args.stats_file, filemode='w', level=logging.WARNING,
                           format='%(message)s')
   else:
     logging.disable(logging.CRITICAL)
@@ -194,7 +195,7 @@ def main(argv):
     stats['consensus_time'] = stats['time']
     del stats['time']
     phone.send_end(__file__, version.get_version(), run_id, run_time, stats, platform=args.platform,
-                   test=args.test)
+                   test=args.test, fail='warn')
 
 
 def open_workers(num_workers, args):
