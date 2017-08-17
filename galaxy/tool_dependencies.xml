@@ -24,6 +24,8 @@
         <action type="set_environment">
           <environment_variable name="PATH" action="prepend_to">$INSTALL_DIR</environment_variable>
         </action>
+        <!-- Note: This does not install the submodules. The current wrapper doesn't use any of the
+        functionality the submodules provide, though. -->
       </actions>
     </install>
   </package>
