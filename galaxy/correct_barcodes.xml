@@ -8,7 +8,13 @@
     <requirement type="package" version="0.7.4">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
-  <command detect_errors="exit_code">correct-barcodes.sh --galaxy $phone -d $dist -m $mapq -p $pos '$input' &gt; '$output'
+  <command detect_errors="exit_code"><![CDATA[
+    baralign.sh '$input' refdir barcodes.bam
+    && samtools view -f 256 barcodes.bam
+    | correct.py --galaxy $phone -d $dist -m $mapq -p $pos '$input'
+    | sort
+    > '$output'
+  ]]>
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Input reads" help="with barcodes, grouped by family"/>

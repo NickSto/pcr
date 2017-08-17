@@ -5,10 +5,17 @@
     <requirement type="package" version="0.7.4">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
-  <command detect_errors="exit_code">dunovo.sh --galaxy $phone -r $min_reads -q $qual_thres -F $qual_format '$input' '$dcs1' '$dcs2'
+  <command detect_errors="exit_code"><![CDATA[
+    dunovo.py --galaxy $phone -r $min_reads -q $qual_thres -F $qual_format '$input'
     #if $keep_sscs:
-      '$sscs1' '$sscs2'
+      --sscs-file sscs.fa
     #end if
+    > duplex.fa
+    && outconv.py duplex.fa -1 '$dcs1' -2 '$dcs2'
+    #if $keep_sscs:
+      && outconv.py sscs.fa -1 '$sscs1' -2 '$sscs2'
+    #end if
+  ]]>
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Aligned input reads" />
