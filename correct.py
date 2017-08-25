@@ -110,10 +110,11 @@ def main(argv):
   logging.info('Reading the families.tsv to get the counts of each family..')
   family_counts, read_pairs = get_family_counts(args.families, args.limit)
 
-  if args.structures:
+  if args.structures or args.visualize != 0:
     logging.info('Counting the unique barcode networks..')
     structures = count_structures(graph, family_counts)
-    print_structures(structures, args.struct_human)
+    if args.structures:
+      print_structures(structures, args.struct_human)
     if args.visualize != 0:
       logging.info('Generating a visualization of barcode networks..')
       visualize([s['graph'] for s in structures], args.visualize, args.viz_format)
