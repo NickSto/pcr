@@ -554,33 +554,33 @@ def num_to_letters(i):
 
 
 def visualize(graphs, viz_path, args_viz_format):
-    import matplotlib
-    from networkx.drawing.nx_agraph import graphviz_layout
-    meta_graph = networkx.Graph()
-    for graph in graphs:
-      add_graph(meta_graph, graph)
-    pos = graphviz_layout(meta_graph)
-    networkx.draw(meta_graph, pos)
-    if viz_path:
-      ext = os.path.splitext(viz_path)[1]
-      if ext == '.dot':
-        viz_format = 'graphviz'
-      elif ext == '.png':
-        viz_format = 'png'
+  import matplotlib
+  from networkx.drawing.nx_agraph import graphviz_layout
+  meta_graph = networkx.Graph()
+  for graph in graphs:
+    add_graph(meta_graph, graph)
+  pos = graphviz_layout(meta_graph)
+  networkx.draw(meta_graph, pos)
+  if viz_path:
+    ext = os.path.splitext(viz_path)[1]
+    if ext == '.dot':
+      viz_format = 'graphviz'
+    elif ext == '.png':
+      viz_format = 'png'
+  else:
+    viz_format = args_viz_format
+  if viz_format == 'graphviz':
+    from networkx.drawing.nx_pydot import write_dot
+    assert viz_path is not None, 'Must provide a filename to --visualize if using --viz-format "graphviz".'
+    base_path = os.path.splitext(viz_path)
+    write_dot(meta_graph, base_path+'.dot')
+    run_command('dot', '-T', 'png', '-o', base_path+'.png', base_path+'.dot')
+    logging.info('Wrote image of graph to '+base_path+'.dot')
+  elif viz_format == 'png':
+    if viz_path is None:
+      matplotlib.pyplot.show()
     else:
-      viz_format = args_viz_format
-    if viz_format == 'graphviz':
-      from networkx.drawing.nx_pydot import write_dot
-      assert viz_path is not None, 'Must provide a filename to --visualize if using --viz-format "graphviz".'
-      base_path = os.path.splitext(viz_path)
-      write_dot(meta_graph, base_path+'.dot')
-      run_command('dot', '-T', 'png', '-o', base_path+'.png', base_path+'.dot')
-      logging.info('Wrote image of graph to '+base_path+'.dot')
-    elif viz_format == 'png':
-      if viz_path is None:
-        matplotlib.pyplot.show()
-      else:
-        matplotlib.pyplot.savefig(viz_path)
+      matplotlib.pyplot.savefig(viz_path)
 
 
 def add_graph(graph, subgraph):
