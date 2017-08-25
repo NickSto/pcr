@@ -11,7 +11,7 @@
   <command detect_errors="exit_code"><![CDATA[
     baralign.sh '$input' refdir barcodes.bam
     && samtools view -f 256 barcodes.bam
-    | correct.py --galaxy $phone -d $dist -m $mapq -p $pos '$input'
+    | correct.py --galaxy $phone -d $dist -m $mapq -p $pos '$input' refdir/barcodes.fa
     | sort
     > '$output'
   ]]>
