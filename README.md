@@ -23,7 +23,8 @@ All known requirements are below. Version numbers in parentheses are what the de
 
 * [MAFFT](http://mafft.cbrc.jp/alignment/software/) (v7.123b)
 * [Python](https://www.python.org/) (**2.7**)  
-* And standard unix tools:
+
+And standard unix tools:
  -  [gcc](https://gcc.gnu.org/) (4.8.4)
  -  [make](https://www.gnu.org/software/make/) (3.81)
  -  [bash](https://www.gnu.org/software/bash/bash.html) (4.0)
@@ -32,13 +33,28 @@ All known requirements are below. Version numbers in parentheses are what the de
  -  [sort](https://www.gnu.org/software/coreutils/coreutils.html) (8.21)
 
 
+### Download
+
+#### Git
+
+    $ git clone --recursive https://github.com/galaxyproject/dunovo.git
+    $ git checkout release
+    $ git submodule update --recursive
+
+#### Via GitHub webpage
+
+Click the [releases](https://github.com/galaxyproject/dunovo/releases) tab at the top of this page, and find the latest release. Download the zip file (the "Source code (zip)" link), as well as `ET.zip` and `utillib.zip`. Extract the first zip file, then unzip the other two into the extracted directory and name those directories `ET` and `utillib`, respectively.
+
+In the end, the organization and names of the three directories should look like this:
+
+    dunovo
+    ├─╴utillib
+    └─╴ET
+
 ### Installation
 
-    $ git clone git@github.com:galaxyproject/dunovo.git
     $ cd dunovo
     $ make
-
-Instead of the `git` command, you can just click the "Clone or download" button on this page, then "Download ZIP", unzip it, and `cd` to the "dunovo-master" directory.
 
 The `make` command is needed to compile the C modules, which are required. You need to be in the root source directory (where the file `Makefile` is) before running the command.
 
