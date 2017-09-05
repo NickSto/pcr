@@ -239,7 +239,7 @@ def delegate(workers, stats, duplex, barcode):
 
 def process_duplex(duplex, barcode):
   output = ''
-  run_stats = {'time':0, 'runs':0, 'aligned_pairs':0}
+  run_stats = {'time':0, 'runs':0, 'aligned_pairs':0, 'failures':0}
   orders = duplex.keys()
   if len(duplex) == 0 or None in duplex:
     return '', {}
