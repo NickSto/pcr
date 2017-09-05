@@ -285,10 +285,14 @@ def align_family(family, mate):
   """Do a multiple sequence alignment of the reads in a family and their quality scores."""
   mate = str(mate)
   assert mate == '1' or mate == '2'
-  # Do the multiple sequence alignment.
-  seq_alignment = make_msa(family, mate)
-  if seq_alignment is None:
+  if len(family) == 0:
     return None
+  elif len(family) == 1:
+    # If there's only one read pair, there's no alignment to be done (and MAFFT won't accept it).
+    seq_alignment = [{'name':family[0]['name'+mate], 'seq':family[0]['seq'+mate]}]
+  else:
+    # Do the multiple sequence alignment.
+    seq_alignment = make_msa(family, mate)
   # Transfer the alignment to the quality scores.
   ## Get a list of all sequences in the alignment (mafft output).
   seqs = [read['seq'] for read in seq_alignment]
@@ -305,13 +309,6 @@ def align_family(family, mate):
 def make_msa(family, mate):
   """Perform a multiple sequence alignment on a set of sequences and parse the result.
   Uses MAFFT."""
-  mate = str(mate)
-  assert mate == '1' or mate == '2'
-  if len(family) == 0:
-    return None
-  elif len(family) == 1:
-    # If there's only one read pair, there's no alignment to be done (and MAFFT won't accept it).
-    return [{'name':family[0]['name'+mate], 'seq':family[0]['seq'+mate]}]
   #TODO: Replace with tempfile.mkstemp()?
   with tempfile.NamedTemporaryFile('w', delete=False, prefix='align.msa.') as family_file:
     for pair in family:
