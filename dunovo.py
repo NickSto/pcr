@@ -100,16 +100,14 @@ def main(argv):
 
   assert args.processes > 0, '-p must be greater than zero'
   # Make dict of process_family() parameters that don't change between families.
-  static = {}
-  static['processes'] = args.processes
-  static['incl_sscs'] = args.incl_sscs
-  static['min_reads'] = args.min_reads
   if args.sscs_file:
-    static['sscs_fh'] = open(args.sscs_file, 'w')
+    sscs_fh = open(args.sscs_file, 'w')
+  else:
+    sscs_fh = None
   if args.qual_format == 'sanger':
-    static['qual_thres'] = chr(args.qual + SANGER_START)
+    qual_thres = chr(args.qual + SANGER_START)
   elif args.qual_format == 'solexa':
-    static['qual_thres'] = chr(args.qual + SOLEXA_START)
+    qual_thres = chr(args.qual + SOLEXA_START)
   else:
     fail('Error: unrecognized --qual-format.')
 
@@ -155,7 +153,8 @@ def main(argv):
       # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
       if this_barcode != barcode or not (this_order != order and this_mate != mate):
         # sys.stderr.write('New duplex:  {}, {}, {}\n'.format(this_barcode, this_order, this_mate))
-        process_duplex(duplex, barcode, workers=workers, stats=stats, **static)
+        process_duplex(duplex, barcode, workers=workers, stats=stats, incl_sscs=args.incl_sscs,
+                       sscs_fh=sscs_fh, min_reads=args.min_reads, qual_thres=qual_thres)
         duplex = collections.OrderedDict()
       # else:
       #   sys.stderr.write('Same duplex: {}, {}, {}\n'.format(this_barcode, this_order, this_mate))
@@ -168,7 +167,8 @@ def main(argv):
     all_reads += 1
   # Process the last family.
   duplex[(order, mate)] = family
-  process_duplex(duplex, barcode, workers=workers, stats=stats, **static)
+  process_duplex(duplex, barcode, workers=workers, stats=stats, incl_sscs=args.incl_sscs,
+                 sscs_fh=sscs_fh, min_reads=args.min_reads, qual_thres=qual_thres)
 
   if args.processes > 1:
     close_workers(workers)
@@ -176,7 +176,7 @@ def main(argv):
     delete_tempfiles(workers)
 
   if args.sscs_file:
-    static['sscs_fh'].close()
+    sscs_fh.close()
   if infile is not sys.stdin:
     infile.close()
 
@@ -275,10 +275,10 @@ def delete_tempfiles(workers):
 
 
 def process_duplex(duplex, barcode, workers=None, stats=None, incl_sscs=False, sscs_fh=None,
-                   processes=1, min_reads=1, qual_thres=' '):
+                   min_reads=1, qual_thres=' '):
   stats['families'] += 1
   # Are we the controller process or a worker?
-  if processes > 1:
+  if workers is not None:
     i = stats['families'] % len(workers)
     worker = workers[i]
     delegate(worker, duplex, barcode)
