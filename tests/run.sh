@@ -130,20 +130,20 @@ function align_p3 {
 }
 
 # dunovo.py defaults on toy data
-function duplex {
+function dunovo {
   echo -e "\tdunovo.py ::: families.msa.tsv:"
   python "$dirname/../dunovo.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/families.cons.fa"
   python "$dirname/../dunovo.py" --incl-sscs "$dirname/families.msa.tsv" | diff -s - "$dirname/families.cons.incl-sscs.fa"
 }
 
 # dunovo.py quality score consideration
-function duplex_qual {
+function dunovo_qual {
   echo -e "\tdunovo.py ::: qual.msa.tsv:"
   python "$dirname/../dunovo.py" --incl-sscs -q 20 "$dirname/qual.msa.tsv" | diff -s - "$dirname/qual.cons.20.fa"
   python "$dirname/../dunovo.py" --incl-sscs -q 10 "$dirname/qual.msa.tsv" | diff -s - "$dirname/qual.cons.10.fa"
 }
 
-function duplex_gapqual {
+function dunovo_gapqual {
   echo -e "\tdunovo.py ::: gapqual.msa.tsv:"
   python "$dirname/../dunovo.py" --incl-sscs -q 25 "$dirname/gapqual.msa.tsv" | diff -s - "$dirname/gapqual.cons.fa"
 }
