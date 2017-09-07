@@ -51,6 +51,21 @@ def make_argparser():
               '4. read name\n'
               '5. aligned sequence\n'
               '6. aligned quality scores.'))
+  parser.add_argument('-1', '--dcs1', metavar='duplex_1.fa', type=argparse.FileType('w'),
+    help=wrap('The file to output the first mates of the duplex consensus sequences into. '
+              'Warning: This will be overwritten if it exists!'))
+  parser.add_argument('-2', '--dcs2', metavar='duplex_2.fa', type=argparse.FileType('w'),
+    help=wrap('Same, but for mate 2.'))
+  parser.add_argument('--sscs1', metavar='sscs_1.fa', type=argparse.FileType('w'),
+    help=wrap('Save the single-strand consensus sequences (mate 1) in this file (FASTA format). '
+              'Warning: This will be overwritten if it exists!'))
+  parser.add_argument('--sscs2', metavar='sscs_2.fa', type=argparse.FileType('w'),
+    help=wrap('Save the single-strand consensus sequences (mate 2) in this file (FASTA format). '
+              'Warning: This will be overwritten if it exists!'))
+  parser.add_argument('--incl-sscs', action='store_true',
+    help=wrap('When outputting duplex consensus sequences, include reads without a full duplex '
+              '(missing one strand). The result will just be the single-strand consensus of the '
+              'remaining read.'))
   parser.add_argument('-r', '--min-reads', type=int, default=3,
     help=wrap('The minimum number of reads (from each strand) required to form a single-strand '
               'consensus. Strands with fewer reads will be skipped. Default: %(default)s.'))
@@ -60,12 +75,6 @@ def make_argparser():
   parser.add_argument('-F', '--qual-format', choices=('sanger', 'solexa'), default='sanger',
     help=wrap('FASTQ quality score format. Sanger scores are assumed to begin at \'{}\' ({}). '
               'Default: %(default)s.'.format(SANGER_START, chr(SANGER_START))))
-  parser.add_argument('--incl-sscs', action='store_true',
-    help=wrap('When outputting duplex consensus sequences, include reads without a full duplex '
-              '(missing one strand). The result will just be the single-strand consensus of the '
-              'remaining read.'))
-  parser.add_argument('-s', '--sscs-file', type=argparse.FileType('w'),
-    help=wrap('Save single-strand consensus sequences in this file (FASTA format).'))
   parser.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
   parser.add_argument('--phone-home', action='store_true',
@@ -105,6 +114,7 @@ def main(argv):
     run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
                               test=args.test, fail='warn')
 
+  # Process and validate arguments.
   if args.processes <= 0:
     fail('Error: --processes must be greater than zero.')
   if args.qual_format == 'sanger':
@@ -113,6 +123,14 @@ def main(argv):
     qual_thres = chr(args.qual + SOLEXA_START)
   else:
     fail('Error: unrecognized --qual-format.')
+  if not any((args.dcs1, args.dcs2, args.sscs1, args.sscs2)):
+    fail('Error: must specify an output file!')
+  # A dict of output filehandles.
+  # 1-indexed so we can do filehandles['dcs'][mate].
+  filehandles = {
+    'dcs': (None, args.dcs1, args.dcs2),
+    'sscs': (None, args.sscs1, args.sscs2),
+  }
 
   # Open all the worker processes.
   workers = open_workers(args.processes)
@@ -144,10 +162,10 @@ def main(argv):
       # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
       if barcode is not None and (new_barcode or not (new_order and new_mate)):
         assert len(duplex) <= 2, duplex.keys()
-        output, sscs, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode,
-                                                             args.incl_sscs, args.min_reads,
-                                                             qual_thres)
-        process_results(output, sscs, run_stats, stats, args.sscs_file)
+        dcs_str, sscs_strs, duplex_mate, run_stats, i = delegate(workers, stats, duplex, barcode,
+                                                                 args.incl_sscs, args.min_reads,
+                                                                 qual_thres)
+        process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
         duplex = collections.OrderedDict()
       barcode = this_barcode
       order = this_order
@@ -159,24 +177,27 @@ def main(argv):
   # Process the last family.
   duplex[(order, mate)] = family
   assert len(duplex) <= 2, duplex.keys()
-  output, sscs, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode,
-                                                       args.incl_sscs, args.min_reads, qual_thres)
-  process_results(output, sscs, run_stats, stats, args.sscs_file)
+  dcs_str, sscs_strs, duplex_mate, run_stats, worker_i = delegate(workers, stats, duplex, barcode,
+                                                                  args.incl_sscs, args.min_reads,
+                                                                  qual_thres)
+  process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
 
   # Do one last loop through the workers, reading the remaining results and stopping them.
   # Start at the worker after the last one processed by the previous loop.
-  start = current_worker_i + 1
+  start = worker_i + 1
   for i in range(len(workers)):
     worker_i = (start + i) % args.processes
     worker = workers[worker_i]
-    output, sscs, run_stats = worker['parent_pipe'].recv()
-    process_results(output, sscs, run_stats, stats, args.sscs_file)
+    dcs_str, sscs_strs, duplex_mate, run_stats = worker['parent_pipe'].recv()
+    process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
     worker['parent_pipe'].send(None)
 
-  if args.sscs_file:
-    args.sscs_file.close()
   if args.infile is not sys.stdin:
     args.infile.close()
+  for fh_group in filehandles.values():
+    for fh in fh_group:
+      if fh:
+        fh.close()
 
   end_time = time.time()
   run_time = int(end_time - start_time)
@@ -229,19 +250,13 @@ def delegate(workers, stats, *args):
   worker_i = stats['duplexes'] % len(workers)
   worker = workers[worker_i]
   # Receive results from the last duplex the worker processed, if any.
+  dcs_str, sscs_strs, duplex_mate, run_stats = None, None, None, {}
   if stats['duplexes'] >= len(workers):
-    output, sscs, run_stats = worker['parent_pipe'].recv()
-  else:
-    output, sscs, run_stats = '', '', {}
-  if output is None and run_stats is None:
-    logging.warning('Worker {} died.'.format(worker['process'].name))
-    worker = open_worker()
-    workers[worker_i] = worker
-    output, run_stats = '', '', {}
+    dcs_str, sscs_strs, duplex_mate, run_stats = worker['parent_pipe'].recv()
   stats['duplexes'] += 1
   # Send in a new duplex to the worker.
   worker['parent_pipe'].send(args)
-  return output, sscs, run_stats, worker_i
+  return dcs_str, sscs_strs, duplex_mate, run_stats, worker_i
 
 
 def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, qual_thres=' '):
@@ -253,7 +268,7 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, qual_thres=' '
   sscss, dcs_seq, duplex_mate = make_consensuses(duplex, min_reads, qual_thres)
   reads_per_strand = [sscs['reads'] for sscs in sscss]
   # Format output.
-  output, sscs_str = format_outputs(sscss, dcs_seq, duplex_mate, barcode, incl_sscs, reads_per_strand)
+  dcs_str, sscs_strs = format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand)
   # Calculate run statistics.
   elapsed = time.time() - start
   logger.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
@@ -261,7 +276,7 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, qual_thres=' '
     run_stats = {'time':elapsed, 'runs':1, 'reads':sum(reads_per_strand)}
   else:
     run_stats = {'time':0, 'runs':0, 'reads':0}
-  return output, sscs_str, run_stats
+  return dcs_str, sscs_strs, duplex_mate, run_stats
 
 
 def make_consensuses(duplex, min_reads, qual_thres):
@@ -301,17 +316,18 @@ def make_sscs(duplex, min_reads, qual_thres):
   return sscss, duplex_mate
 
 
-def format_outputs(sscss, dcs_seq, duplex_mate, barcode, incl_sscs, reads_per_strand):
-  # Format output.
-  sscs_str = ''
+def format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand):
+  # SSCS
+  sscs_strs = [None, None, None]
   for sscs in sscss:
-    sscs_str += '>{0}.{order}.{mate} {reads}\n{consensus}\n'.format(barcode, **sscs)
-  output = ''
-  if len(sscss) == 1 and incl_sscs:
-    output = format_consensus(sscss[0]['consensus'], barcode, duplex_mate, reads_per_strand)
-  elif len(sscss) == 2:
-    output = format_consensus(dcs_seq, barcode, duplex_mate, reads_per_strand)
-  return output, sscs_str
+    sscs_strs[sscs['mate']] = '>{0}.{order} {reads}\n{consensus}\n'.format(barcode, **sscs)
+  # DCS
+  dcs_str = ''
+  if dcs_seq:
+    dcs_str = format_consensus(dcs_seq, barcode, reads_per_strand)
+  elif incl_sscs and sscss:
+    dcs_str = format_consensus(sscss[0]['consensus'], barcode, reads_per_strand)
+  return dcs_str, sscs_strs
 
 
 def get_multi_logger():
@@ -329,17 +345,21 @@ def get_multi_logger():
   return logger
 
 
-def format_consensus(seq, barcode, mate, reads_per_strand):
+def format_consensus(seq, barcode, reads_per_strand):
   reads_str = '-'.join(map(str, reads_per_strand))
-  return '>{bar}.{mate} {reads}\n{seq}\n'.format(bar=barcode, mate=mate, reads=reads_str, seq=seq)
+  return '>{bar} {reads}\n{seq}\n'.format(bar=barcode, reads=reads_str, seq=seq)
 
 
-def process_results(output, sscs, run_stats, stats, sscs_fh):
+def process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles):
+  if dcs_str is None and sscs_strs is None:
+    return
   for key, value in run_stats.items():
     stats[key] += value
-  sys.stdout.write(output)
-  if sscs_fh:
-    sscs_fh.write(sscs)
+  if dcs_str and filehandles['dcs'][duplex_mate]:
+    filehandles['dcs'][duplex_mate].write(dcs_str)
+  for mate in (1, 2):
+    if sscs_strs[mate] and filehandles['sscs'][mate]:
+      filehandles['sscs'][mate].write(sscs_strs[mate])
 
 
 def tone_down_logger():

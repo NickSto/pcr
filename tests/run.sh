@@ -69,6 +69,8 @@ function list_tests {
     # Filter out functions that aren't tests.
     if echo "$initial_declarations_plus_meta" | grep -qF "declare -f $test"; then
       continue
+    elif echo "$test" | grep -qE '^_'; then
+      continue
     else
       echo "  $test"
     fi
@@ -104,6 +106,21 @@ function errstats {
   errstats_overlap
 }
 
+# Run the dunovo.py-specific tests.
+function dunovo_all {
+  declare -a tests
+  i=1
+  while read declare f test; do
+    if echo "$test" | grep -qE '^dunovo' && [[ $test != dunovo_all ]]; then
+      tests[$i]=$test
+      i=$((i+1))
+    fi
+  done < <(declare -F)
+  for test in ${tests[@]}; do
+    $test
+  done
+}
+
 # Get the list of functions now that the meta tests have been declared.
 initial_declarations_plus_meta=$(declare -F)
 
@@ -120,32 +137,46 @@ function barcodes {
 # align_families.py
 function align {
   echo -e "\talign_families.py ::: families.sort.tsv:"
-  python "$dirname/../align_families.py" "$dirname/families.sort.tsv" | diff -s - "$dirname/families.msa.tsv"
+  python "$dirname/../align_families.py" -q "$dirname/families.sort.tsv" | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align_families.py with 3 processes
 function align_p3 {
   echo -e "\talign_families.py ::: families.sort.tsv:"
-  python "$dirname/../align_families.py" -p 3 "$dirname/families.sort.tsv" | diff -s - "$dirname/families.msa.tsv"
+  python "$dirname/../align_families.py" -q -p 3 "$dirname/families.sort.tsv" | diff -s - "$dirname/families.msa.tsv"
 }
 
 # dunovo.py defaults on toy data
 function dunovo {
-  echo -e "\tdunovo.py ::: families.msa.tsv:"
-  python "$dirname/../dunovo.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/families.cons.fa"
-  python "$dirname/../dunovo.py" --incl-sscs "$dirname/families.msa.tsv" | diff -s - "$dirname/families.cons.incl-sscs.fa"
+  _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa families.dcs_2.fa
+}
+
+# dunovo.py with --incl-sscs
+function dunovo_incl_sscs {
+  _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa \
+          families.dcs.incl-sscs_1.fa  families.dcs.incl-sscs_2.fa \
+          --incl-sscs
+}
+
+# dunovo.py with 3 processes
+function dunovo_p3 {
+  _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa families.dcs_2.fa -p 3
+  _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa \
+          families.dcs.incl-sscs_1.fa  families.dcs.incl-sscs_2.fa \
+          --incl-sscs -p 3
 }
 
 # dunovo.py quality score consideration
 function dunovo_qual {
-  echo -e "\tdunovo.py ::: qual.msa.tsv:"
-  python "$dirname/../dunovo.py" --incl-sscs -q 20 "$dirname/qual.msa.tsv" | diff -s - "$dirname/qual.cons.20.fa"
-  python "$dirname/../dunovo.py" --incl-sscs -q 10 "$dirname/qual.msa.tsv" | diff -s - "$dirname/qual.cons.10.fa"
+  _dunovo qual.msa.tsv qual.10.sscs_1.fa qual.10.sscs_2.fa qual.10.dcs_1.fa qual.10.dcs_2.fa \
+          --incl-sscs -q 10
+  _dunovo qual.msa.tsv qual.20.sscs_1.fa qual.20.sscs_2.fa qual.20.dcs_1.fa qual.20.dcs_2.fa \
+          --incl-sscs -q 20
 }
 
 function dunovo_gapqual {
-  echo -e "\tdunovo.py ::: gapqual.msa.tsv:"
-  python "$dirname/../dunovo.py" --incl-sscs -q 25 "$dirname/gapqual.msa.tsv" | diff -s - "$dirname/gapqual.cons.fa"
+  _dunovo gapqual.msa.tsv gapqual.sscs_1.fa gapqual.sscs_2.fa gapqual.dcs_1.fa gapqual.dcs_2.fa \
+          --incl-sscs -q 25
 }
 
 function stats_diffs {
@@ -169,6 +200,37 @@ function errstats_overlap {
   if [[ -f "$dirname/overlaps.tmp.tsv" ]]; then
     rm "$dirname/overlaps.tmp.tsv"
   fi
+}
+
+# utility function for all dunovo.py tests
+function _dunovo {
+  # Read required arguments.
+  input=$1
+  sscs1=$2
+  sscs2=$3
+  dcs1=$4
+  dcs2=$5
+  # Read optional arguments (after the required ones).
+  declare -a args
+  i=6
+  while [[ ${!i} ]]; do
+    args[$i]=${!i}
+    i=$((i+1))
+  done
+  echo -e "\tdunovo.py ${args[@]} ::: $input:"
+  python "$dirname/../dunovo.py" ${args[@]} "$dirname/$input" \
+    --sscs1 "$dirname/families.tmp.sscs_1.fa" --sscs2 "$dirname/families.tmp.sscs_2.fa" \
+    --dcs1  "$dirname/families.tmp.dcs_1.fa"  --dcs2  "$dirname/families.tmp.dcs_2.fa"
+  diff -s "$dirname/families.tmp.sscs_1.fa" "$dirname/$sscs1"
+  diff -s "$dirname/families.tmp.sscs_2.fa" "$dirname/$sscs2"
+  diff -s "$dirname/families.tmp.dcs_1.fa"  "$dirname/$dcs1"
+  diff -s "$dirname/families.tmp.dcs_2.fa"  "$dirname/$dcs2"
+  for file in "$dirname/families.tmp.sscs_1.fa" "$dirname/families.tmp.sscs_2.fa" \
+      "$dirname/families.tmp.dcs_1.fa" "$dirname/families.tmp.dcs_2.fa"; do
+    if [[ -f "$file" ]]; then
+      rm "$file"
+    fi
+  done
 }
 
 main "$@"
