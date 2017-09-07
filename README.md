@@ -77,7 +77,7 @@ Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts
 `$ align_families.py families.tsv > families.msa.tsv`
 
 3. Build duplex consensus sequences from the aligned families.  
-`$ dunovo.py families.msa.tsv > duplex.fa`
+`$ dunovo.py families.msa.tsv -1 duplex_1.fa -2 duplex_2.fa`
 
 See all options for a given command by giving it the `-h` flag.
 
@@ -105,7 +105,7 @@ This step aligns each family of reads, but it processes each strand separately. 
 
 #### 3. Build duplex consensus sequences from the aligned families.  
 
-`$ dunovo.py families.msa.tsv > duplex.fa`
+`$ dunovo.py families.msa.tsv -1 duplex_1.fa -2 duplex_2.fa`
 
 This calls a consensus sequence from the multiple sequence alignments of the previous step. It does this in two steps: First, single-strand consensus sequences (SSCSs) are called from the family alignments, then duplex consensus sequences are called from pairs of SSCSs.
 
@@ -113,14 +113,9 @@ When calling SSCSs, by default 3 reads are required to successfully create a con
 
 The duplex consensus sequences are created by comparing the two SSCSs. For each base, if they agree, that base will be inserted. If they disagree, the IUPAC ambiguity code for the two bases will be used. Note that a disagreement between a base and a gap will result in an `N`.
 
-The output of this step is the duplex consensus sequences in FASTA format. By default, it will only include full duplex consensuses, meaning if one of the two SSCSs are missing, that sequence will be omitted. Include these with the `--incl-sscs` option.
+The output of this step is the duplex consensus sequences in FASTA format. To also output all single-strand consensus sequences (including those which didn't produce a duplex consensus), use the `--sscs1` and `--sscs2` options.
 
-The reads will be printed in one, interleaved file, with the naming format:  
-`>{barcode}.{mate} {# reads in strand 1 family}/{# reads in strand 2 family}`  
+The reads will be printed in two files, one per paired-end mate, with this naming format:  
+`>{barcode} {# reads in strand 1 family}-{# reads in strand 2 family}`  
 e.g.  
-`>TTGCGCCAGGGCGAGGAAAATACT.1 8/13`
-
-But this isn't easy to work with. A better output is in development, but for now you can use the script `outconv.py` to convert the interleaved output file into two standard forward/reverse paired files with a standard naming convention:
-
-    $ python utils/outconv.py duplex.fa -1 duplex_1.fa -2 duplex_2.fa
-    $ python utils/outconv.py sscs.fa -1 sscs_1.fa -2 sscs_2.fa
+`>TTGCGCCAGGGCGAGGAAAATACT 8-13`
