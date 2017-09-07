@@ -135,69 +135,78 @@ def main(argv):
   # Open all the worker processes.
   workers = open_workers(args.processes)
 
-  stats = {'time':0, 'reads':0, 'runs':0, 'duplexes':0}
-  all_reads = 0
-  duplex = collections.OrderedDict()
-  family = []
-  barcode = None
-  order = None
-  mate = None
-  for line in args.infile:
-    fields = line.rstrip('\r\n').split('\t')
-    if len(fields) != 6:
-      continue
-    this_barcode, this_order, this_mate, name, seq, qual = fields
-    this_mate = int(this_mate)
-    # If the barcode or order has changed, we're in a new single-stranded family.
-    # Process the reads we've previously gathered as one family and start a new family.
-    new_barcode = this_barcode != barcode
-    new_order = this_order != order
-    new_mate = this_mate != mate
-    if new_barcode or new_order or new_mate:
-      if order is not None and mate is not None:
-        duplex[(order, mate)] = family
-      # We're at the end of the duplex pair if the barcode changes or if the order changes without
-      # the mate changing, or vice versa (the second read in each duplex comes when the barcode
-      # stays the same while both the order and mate switch). Process the duplex and start
-      # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
-      if barcode is not None and (new_barcode or not (new_order and new_mate)):
-        assert len(duplex) <= 2, duplex.keys()
-        dcs_str, sscs_strs, duplex_mate, run_stats, i = delegate(workers, stats, duplex, barcode,
-                                                                 args.incl_sscs, args.min_reads,
-                                                                 qual_thres)
-        process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
-        duplex = collections.OrderedDict()
-      barcode = this_barcode
-      order = this_order
-      mate = this_mate
-      family = []
-    read = {'name': name, 'seq':seq, 'qual':qual}
-    family.append(read)
-    all_reads += 1
-  # Process the last family.
-  duplex[(order, mate)] = family
-  assert len(duplex) <= 2, duplex.keys()
-  dcs_str, sscs_strs, duplex_mate, run_stats, worker_i = delegate(workers, stats, duplex, barcode,
-                                                                  args.incl_sscs, args.min_reads,
-                                                                  qual_thres)
-  process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
+  try:
 
-  # Do one last loop through the workers, reading the remaining results and stopping them.
-  # Start at the worker after the last one processed by the previous loop.
-  start = worker_i + 1
-  for i in range(len(workers)):
-    worker_i = (start + i) % args.processes
-    worker = workers[worker_i]
-    dcs_str, sscs_strs, duplex_mate, run_stats = worker['parent_pipe'].recv()
+    stats = {'time':0, 'reads':0, 'runs':0, 'duplexes':0}
+    all_reads = 0
+    duplex = collections.OrderedDict()
+    family = []
+    barcode = None
+    order = None
+    mate = None
+    for line in args.infile:
+      fields = line.rstrip('\r\n').split('\t')
+      if len(fields) != 6:
+        continue
+      this_barcode, this_order, this_mate, name, seq, qual = fields
+      this_mate = int(this_mate)
+      # If the barcode or order has changed, we're in a new single-stranded family.
+      # Process the reads we've previously gathered as one family and start a new family.
+      new_barcode = this_barcode != barcode
+      new_order = this_order != order
+      new_mate = this_mate != mate
+      if new_barcode or new_order or new_mate:
+        if order is not None and mate is not None:
+          duplex[(order, mate)] = family
+        # We're at the end of the duplex pair if the barcode changes or if the order changes without
+        # the mate changing, or vice versa (the second read in each duplex comes when the barcode
+        # stays the same while both the order and mate switch). Process the duplex and start
+        # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
+        if barcode is not None and (new_barcode or not (new_order and new_mate)):
+          assert len(duplex) <= 2, duplex.keys()
+          dcs_str, sscs_strs, duplex_mate, run_stats, i = delegate(workers, stats, duplex, barcode,
+                                                                   args.incl_sscs, args.min_reads,
+                                                                   qual_thres)
+          process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
+          duplex = collections.OrderedDict()
+        barcode = this_barcode
+        order = this_order
+        mate = this_mate
+        family = []
+      read = {'name': name, 'seq':seq, 'qual':qual}
+      family.append(read)
+      all_reads += 1
+    # Process the last family.
+    duplex[(order, mate)] = family
+    assert len(duplex) <= 2, duplex.keys()
+    dcs_str, sscs_strs, duplex_mate, run_stats, worker_i = delegate(workers, stats, duplex, barcode,
+                                                                    args.incl_sscs, args.min_reads,
+                                                                    qual_thres)
     process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
-    worker['parent_pipe'].send(None)
 
-  if args.infile is not sys.stdin:
-    args.infile.close()
-  for fh_group in filehandles.values():
-    for fh in fh_group:
-      if fh:
-        fh.close()
+    # Do one last loop through the workers, reading the remaining results and stopping them.
+    # Start at the worker after the last one processed by the previous loop.
+    start = worker_i + 1
+    for i in range(len(workers)):
+      worker_i = (start + i) % args.processes
+      worker = workers[worker_i]
+      dcs_str, sscs_strs, duplex_mate, run_stats = worker['parent_pipe'].recv()
+      process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
+
+  except Exception:
+    raise
+  finally:
+    # If the root process encounters an exception and doesn't tell the workers to stop, it will
+    # hang forever.
+    for worker in workers:
+      worker['parent_pipe'].send(None)
+    # Close all open filehandles.
+    if args.infile is not sys.stdin:
+      args.infile.close()
+    for fh_group in filehandles.values():
+      for fh in fh_group:
+        if fh:
+          fh.close()
 
   end_time = time.time()
   run_time = int(end_time - start_time)
