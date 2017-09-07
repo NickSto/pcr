@@ -17,9 +17,7 @@ phone = shims.get_module_or_shim('ET.phone')
 
 SANGER_START = 33
 SOLEXA_START = 64
-OPT_DEFAULTS = {'min_reads':3, 'processes':1, 'qual':20, 'qual_format':'sanger',
-                'log':sys.stderr, 'volume':logging.WARNING}
-USAGE = "%(prog)s [options]"
+USAGE = '$ %(prog)s [options] families.msa.tsv > duplex-consensuses.fa'
 DESCRIPTION = """Build consensus sequences from read aligned families. Prints duplex consensus \
 sequences in FASTA to stdout. The sequence ids are BARCODE.MATE, e.g. "CTCAGATAACATACCTTATATGCA.1", \
 where "BARCODE" is the input barcode, and "MATE" is "1" or "2" as an arbitrary designation of the \
@@ -36,17 +34,16 @@ and comparing bases at each position. If they agree, that base is used in the co
 the IUPAC ambiguity code for both bases is used (N + anything and gap + non-gap result in an N)."""
 
 
-def main(argv):
+def make_argparser():
 
   wrapper = simplewrap.Wrapper()
   wrap = wrapper.wrap
-
-  parser = argparse.ArgumentParser(description=wrap(DESCRIPTION),
+  parser = argparse.ArgumentParser(usage=USAGE, description=wrap(DESCRIPTION),
                                    formatter_class=argparse.RawTextHelpFormatter)
-  parser.set_defaults(**OPT_DEFAULTS)
 
   wrapper.width = wrapper.width - 24
-  parser.add_argument('infile', metavar='read-families.tsv', nargs='?',
+  parser.add_argument('infile', metavar='families.msa.tsv', nargs='?', default=sys.stdin,
+                      type=argparse.FileType('r'),
     help=wrap('The output of align_families.py. 6 columns:\n'
               '1. (canonical) barcode\n'
               '2. order ("ab" or "ba")\n'
@@ -54,13 +51,13 @@ def main(argv):
               '4. read name\n'
               '5. aligned sequence\n'
               '6. aligned quality scores.'))
-  parser.add_argument('-r', '--min-reads', type=int,
+  parser.add_argument('-r', '--min-reads', type=int, default=3,
     help=wrap('The minimum number of reads (from each strand) required to form a single-strand '
               'consensus. Strands with fewer reads will be skipped. Default: %(default)s.'))
-  parser.add_argument('-q', '--qual', type=int,
+  parser.add_argument('-q', '--qual', type=int, default=20,
     help=wrap('Base quality threshold. Bases below this quality will not be counted. '
               'Default: %(default)s.'))
-  parser.add_argument('-F', '--qual-format', choices=('sanger', 'solexa'),
+  parser.add_argument('-F', '--qual-format', choices=('sanger', 'solexa'), default='sanger',
     help=wrap('FASTQ quality score format. Sanger scores are assumed to begin at \'{}\' ({}). '
               'Default: %(default)s.'.format(SANGER_START, chr(SANGER_START))))
   parser.add_argument('--incl-sscs', action='store_true',
@@ -68,9 +65,8 @@ def main(argv):
               '(missing one strand). The result will just be the single-strand consensus of the '
               'remaining read.'))
   parser.add_argument('-s', '--sscs-file',
-    help=wrap('Save single-strand consensus sequences in this file (FASTA format). Currently does '
-              'not work when in parallel mode.'))
-  parser.add_argument('-p', '--processes', type=int,
+    help=wrap('Save single-strand consensus sequences in this file (FASTA format).'))
+  parser.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
   parser.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
@@ -85,12 +81,20 @@ def main(argv):
     help=wrap('If reporting usage data, mark this as a test run.'))
   parser.add_argument('-v', '--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
-  parser.add_argument('-l', '--log', type=argparse.FileType('w'),
-    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  parser.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
+    help=wrap('Print log messages to this file instead of to stderr. Warning: Will overwrite the '
+              'file.'))
+  parser.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
+                      default=logging.WARNING)
   parser.add_argument('-V', '--verbose', dest='volume', action='store_const', const=logging.INFO)
   parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
 
+  return parser
+
+
+def main(argv):
+
+  parser = make_argparser()
   args = parser.parse_args(argv[1:])
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
@@ -114,11 +118,6 @@ def main(argv):
   else:
     fail('Error: unrecognized --qual-format.')
 
-  if args.infile:
-    infile = open(args.infile)
-  else:
-    infile = sys.stdin
-
   # Open all the worker processes.
   workers = open_workers(args.processes)
 
@@ -129,7 +128,7 @@ def main(argv):
   barcode = None
   order = None
   mate = None
-  for line in infile:
+  for line in args.infile:
     fields = line.rstrip('\r\n').split('\t')
     if len(fields) != 6:
       continue
@@ -178,8 +177,8 @@ def main(argv):
 
   if sscs_fh:
     sscs_fh.close()
-  if infile is not sys.stdin:
-    infile.close()
+  if args.infile is not sys.stdin:
+    args.infile.close()
 
   end_time = time.time()
   run_time = int(end_time - start_time)

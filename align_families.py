@@ -25,21 +25,20 @@ phone = shims.get_module_or_shim('ET.phone')
 #      produce pretty weird results.
 
 REQUIRED_COMMANDS = ['mafft']
-OPT_DEFAULTS = {'processes':1, 'log_file':sys.stderr, 'volume':logging.WARNING}
+USAGE = '$ %(prog)s [options] families.tsv > families.msa.tsv'
 DESCRIPTION = """Read in sorted FASTQ data and do multiple sequence alignments of each family."""
 
 
-def main(argv):
+def make_argparser():
 
   wrapper = simplewrap.Wrapper()
   wrap = wrapper.wrap
-
-  parser = argparse.ArgumentParser(description=wrap(DESCRIPTION),
+  parser = argparse.ArgumentParser(usage=USAGE, description=wrap(DESCRIPTION),
                                    formatter_class=argparse.RawTextHelpFormatter)
-  parser.set_defaults(**OPT_DEFAULTS)
 
   wrapper.width = wrapper.width - 24
-  parser.add_argument('infile', metavar='read-families.tsv', nargs='?',
+  parser.add_argument('infile', metavar='read-families.tsv', nargs='?', default=sys.stdin,
+                      type=argparse.FileType('r'),
     help=wrap('The input reads, sorted into families. One line per read pair, 8 tab-delimited '
               'columns:\n'
               '1. canonical barcode\n'
@@ -50,7 +49,7 @@ def main(argv):
               '6. read 2 name\n'
               '7. read 2 sequence\n'
               '8. read 2 quality scores'))
-  parser.add_argument('-p', '--processes', type=int,
+  parser.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Must be at least 1. Default: %(default)s.'))
   parser.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
@@ -65,12 +64,19 @@ def main(argv):
     help=wrap('If reporting usage data, mark this as a test run.'))
   parser.add_argument('--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
-  parser.add_argument('-L', '--log-file', type=argparse.FileType('w'),
+  parser.add_argument('-L', '--log-file', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
+                      default=logging.WARNING)
   parser.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
   parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
 
+  return parser
+
+
+def main(argv):
+
+  parser = make_argparser()
   args = parser.parse_args(argv[1:])
 
   logging.basicConfig(stream=args.log_file, level=args.volume, format='%(message)s')
@@ -90,11 +96,6 @@ def main(argv):
       missing_commands.append(command)
   if missing_commands:
     fail('Error: Missing commands: "'+'", "'.join(missing_commands)+'".')
-
-  if args.infile:
-    infile = open(args.infile)
-  else:
-    infile = sys.stdin
 
   # Open all the worker processes.
   workers = open_workers(args.processes)
@@ -126,7 +127,7 @@ def main(argv):
   family = []
   barcode = None
   order = None
-  for line in infile:
+  for line in args.infile:
     fields = line.rstrip('\r\n').split('\t')
     if len(fields) != 8:
       continue
@@ -166,8 +167,8 @@ def main(argv):
     process_results(output, run_stats, stats)
     worker['parent_pipe'].send(None)
 
-  if infile is not sys.stdin:
-    infile.close()
+  if args.infile is not sys.stdin:
+    args.infile.close()
 
   end_time = time.time()
   run_time = int(end_time - start_time)

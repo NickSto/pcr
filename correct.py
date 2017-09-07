@@ -18,43 +18,34 @@ version = shims.get_module_or_shim('utillib.version')
 phone = shims.get_module_or_shim('ET.phone')
 
 VERBOSE = (logging.DEBUG+logging.INFO)//2
-ARG_DEFAULTS = {'sam':sys.stdin, 'mapq':20, 'pos':2, 'dist':1, 'choose_by':'count', 'output':True,
-                'visualize':0, 'viz_format':'png', 'log':sys.stderr, 'volume':logging.WARNING}
-USAGE = "%(prog)s [options]"
+USAGE = '$ %(prog)s [options] families.tsv barcodes.fa barcodes.sam > families.corrected.tsv'
 DESCRIPTION = """Correct barcodes using an alignment of all barcodes to themselves. Reads the
 alignment in SAM format and corrects the barcodes in an input "families" file (the output of
 make-barcodes.awk). It will print the "families" file to stdout with barcodes (and orders)
 corrected."""
 
 
-def main(argv):
-
-  if len(argv) == 2 and argv[1] == '--version' or argv[1] == '-v':
-    print(version.get_version())
-    return
-
-  parser = argparse.ArgumentParser(description=DESCRIPTION)
-  parser.set_defaults(**ARG_DEFAULTS)
-
+def make_argparser():
+  parser = argparse.ArgumentParser(usage=USAGE, description=DESCRIPTION)
   parser.add_argument('families', type=open_as_text_or_gzip,
     help='The sorted output of make-barcodes.awk. The important part is that it\'s a tab-delimited '
          'file with at least 2 columns: the barcode sequence and order, and it must be sorted in '
          'the same order as the "reads" in the SAM file.')
   parser.add_argument('reads', type=open_as_text_or_gzip,
     help='The fasta/q file given to the aligner. Used to get barcode sequences from read names.')
-  parser.add_argument('sam', type=argparse.FileType('r'), nargs='?',
+  parser.add_argument('sam', type=argparse.FileType('r'), nargs='?', default=sys.stdin,
     help='Barcode alignment, in SAM format. Omit to read from stdin. The read names must be '
          'integers, representing the (1-based) order they appear in the families file.')
   parser.add_argument('-P', '--prepend', action='store_true',
     help='Prepend the corrected barcodes and orders to the original columns.')
-  parser.add_argument('-d', '--dist', type=int,
+  parser.add_argument('-d', '--dist', type=int, default=1,
     help='NM edit distance threshold. Default: %(default)s')
-  parser.add_argument('-m', '--mapq', type=int,
+  parser.add_argument('-m', '--mapq', type=int, default=20,
     help='MAPQ threshold. Default: %(default)s')
-  parser.add_argument('-p', '--pos', type=int,
+  parser.add_argument('-p', '--pos', type=int, default=2,
     help='POS tolerance. Alignments will be ignored if abs(POS - 1) is greater than this value. '
          'Set to greater than the barcode length for no threshold. Default: %(default)s')
-  parser.add_argument('-c', '--choose-by', choices=('count', 'connect'),
+  parser.add_argument('-c', '--choose-by', choices=('count', 'connect'), default='count',
     help='Choose the "correct" barcode in a network of related barcodes by either the count of how '
          'many times the barcode was observed ("freq") or how connected the barcode is to the '
          'others in the network ("connect").')
@@ -63,14 +54,15 @@ def main(argv):
   parser.add_argument('-S', '--structures', action='store_true',
     help='Print a list of the unique isoforms')
   parser.add_argument('--struct-human', action='store_true')
-  parser.add_argument('-V', '--visualize', nargs='?',
+  parser.add_argument('-V', '--visualize', metavar='networks.png', nargs='?', default=0,
     help='Produce a visualization of the unique structures and write the image to this file. '
          'If you omit a filename, it will be displayed in a window.')
-  parser.add_argument('-F', '--viz-format', choices=('dot', 'graphviz', 'png'))
-  parser.add_argument('-n', '--no-output', dest='output', action='store_false')
-  parser.add_argument('-l', '--log', type=argparse.FileType('w'),
+  parser.add_argument('-F', '--viz-format', choices=('dot', 'graphviz', 'png'), default='png')
+  parser.add_argument('-n', '--no-output', dest='output', action='store_false', default=True)
+  parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
+                      default=logging.WARNING)
   parser.add_argument('-i', '--info', dest='volume', action='store_const', const=logging.INFO)
   parser.add_argument('-v', '--verbose', dest='volume', action='store_const', const=VERBOSE)
   parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG,
@@ -88,7 +80,17 @@ def main(argv):
     help='If reporting usage data, mark this as a test run.')
   parser.add_argument('--version', action='version', version=str(version.get_version()),
     help='Print the version number and exit.')
+  return parser
 
+
+def main(argv):
+
+  # Allow using -v for --version if it's the only argument, and --verbose if there are more.
+  if len(argv) == 2 and argv[1] == '-v':
+    print(version.get_version())
+    return
+
+  parser = make_argparser()
   args = parser.parse_args(argv[1:])
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
