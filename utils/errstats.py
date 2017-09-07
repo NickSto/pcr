@@ -20,7 +20,7 @@ try:
   import pyBamParser.bam
 except ImportError:
   pass
-from lib import simplewrap
+from utillib import simplewrap
 import consensus as consensuslib
 
 REVCOMP_MAP = {'a':'t', 'c':'g', 'g':'c', 't':'a', 'r':'y', 'y':'r', 'm':'k', 'k':'m', 'b':'v',
