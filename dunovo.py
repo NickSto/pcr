@@ -217,6 +217,14 @@ def main(argv):
                    test=args.test, fail='warn')
 
 
+def tone_down_logger():
+  """Change the logging level names from all-caps to capitalized lowercase.
+  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
+  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
+    level_name = logging.getLevelName(level)
+    logging.addLevelName(level, level_name.capitalize())
+
+
 def open_workers(num_workers):
   """Open the required number of worker processes."""
   workers = []
@@ -234,18 +242,6 @@ def open_worker():
   return worker
 
 
-def worker_function(child_pipe):
-  while True:
-    args = child_pipe.recv()
-    if args is None:
-      break
-    try:
-      child_pipe.send(process_duplex(*args))
-    except Exception:
-      child_pipe.send((None, None))
-      raise
-
-
 def delegate(workers, stats, *args):
   worker_i = stats['duplexes'] % len(workers)
   worker = workers[worker_i]
@@ -257,6 +253,22 @@ def delegate(workers, stats, *args):
   # Send in a new duplex to the worker.
   worker['parent_pipe'].send(args)
   return dcs_str, sscs_strs, duplex_mate, run_stats, worker_i
+
+
+#################### Worker processes ####################
+
+
+def worker_function(child_pipe):
+  """Worker loop: Receive data from parent, process it, and send back results."""
+  while True:
+    args = child_pipe.recv()
+    if args is None:
+      break
+    try:
+      child_pipe.send(process_duplex(*args))
+    except Exception:
+      child_pipe.send((None, None))
+      raise
 
 
 def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, qual_thres=' '):
@@ -330,21 +342,6 @@ def format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand):
   return dcs_str, sscs_strs
 
 
-def get_multi_logger():
-  # Get config info from root logger.
-  root_logger = logging.getLogger()
-  loglevel = root_logger.getEffectiveLevel()
-  stream = root_logger.handlers[0].stream
-  # Get a multiprocessing logger and configure it the same as the root logger.
-  logger = multiprocessing.get_logger()
-  logger.setLevel(loglevel)
-  if len(logger.handlers) > 0:
-    logger.handlers[0].stream = stream
-  else:
-    logger.addHandler(logging.StreamHandler(stream=stream))
-  return logger
-
-
 def format_consensus(seq, barcode, reads_per_strand):
   reads_str = '-'.join(map(str, reads_per_strand))
   return '>{bar} {reads}\n{seq}\n'.format(bar=barcode, reads=reads_str, seq=seq)
@@ -362,12 +359,19 @@ def process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandl
       filehandles['sscs'][mate].write(sscs_strs[mate])
 
 
-def tone_down_logger():
-  """Change the logging level names from all-caps to capitalized lowercase.
-  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
-  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
-    level_name = logging.getLevelName(level)
-    logging.addLevelName(level, level_name.capitalize())
+def get_multi_logger():
+  # Get config info from root logger.
+  root_logger = logging.getLogger()
+  loglevel = root_logger.getEffectiveLevel()
+  stream = root_logger.handlers[0].stream
+  # Get a multiprocessing logger and configure it the same as the root logger.
+  logger = multiprocessing.get_logger()
+  logger.setLevel(loglevel)
+  if len(logger.handlers) > 0:
+    logger.handlers[0].stream = stream
+  else:
+    logger.addHandler(logging.StreamHandler(stream=stream))
+  return logger
 
 
 def fail(message):
