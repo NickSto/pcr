@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 from __future__ import division
-import os
 import sys
 import time
 import logging
-import tempfile
 import argparse
-import subprocess
 import collections
+import multiprocessing
 import consensus
 import swalign
 import shims
@@ -19,7 +17,8 @@ phone = shims.get_module_or_shim('ET.phone')
 
 SANGER_START = 33
 SOLEXA_START = 64
-OPT_DEFAULTS = {'min_reads':3, 'processes':1, 'qual':20, 'qual_format':'sanger'}
+OPT_DEFAULTS = {'min_reads':3, 'processes':1, 'qual':20, 'qual_format':'sanger',
+                'log':sys.stderr, 'volume':logging.WARNING}
 USAGE = "%(prog)s [options]"
 DESCRIPTION = """Build consensus sequences from read aligned families. Prints duplex consensus \
 sequences in FASTA to stdout. The sequence ids are BARCODE.MATE, e.g. "CTCAGATAACATACCTTATATGCA.1", \
@@ -71,12 +70,8 @@ def main(argv):
   parser.add_argument('-s', '--sscs-file',
     help=wrap('Save single-strand consensus sequences in this file (FASTA format). Currently does '
               'not work when in parallel mode.'))
-  parser.add_argument('-l', '--log', metavar='LOG_FILE', dest='stats_file',
-    help=wrap('Print statistics on the run to this file. Use "-" to print to stderr.'))
   parser.add_argument('-p', '--processes', type=int,
-    help=wrap('Number of processes to use. If > 1, launches this many worker subprocesses. Note: '
-              'if this option is used, no output will be generated until the end of the entire '
-              'run, so no streaming is possible. Default: %(default)s.'))
+    help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
   parser.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
@@ -90,8 +85,16 @@ def main(argv):
     help=wrap('If reporting usage data, mark this as a test run.'))
   parser.add_argument('-v', '--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
+  parser.add_argument('-l', '--log', type=argparse.FileType('w'),
+    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+  parser.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  parser.add_argument('-V', '--verbose', dest='volume', action='store_const', const=logging.INFO)
+  parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
 
   args = parser.parse_args(argv[1:])
+
+  logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
+  tone_down_logger()
 
   start_time = time.time()
   if args.phone_home:
@@ -116,21 +119,10 @@ def main(argv):
   else:
     infile = sys.stdin
 
-  if args.stats_file:
-    if args.stats_file == '-':
-      logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format='%(message)s')
-    else:
-      logging.basicConfig(filename=args.stats_file, filemode='w', level=logging.WARNING,
-                          format='%(message)s')
-  else:
-    logging.disable(logging.CRITICAL)
+  # Open all the worker processes.
+  workers = open_workers(args.processes)
 
-  # Open all the worker processes, if we're using more than one.
-  workers = None
-  if args.processes > 1:
-    workers = open_workers(args.processes, args)
-
-  stats = {'time':0, 'reads':0, 'runs':0, 'families':0}
+  stats = {'time':0, 'reads':0, 'runs':0, 'duplexes':0}
   all_reads = 0
   duplex = collections.OrderedDict()
   family = []
@@ -141,23 +133,26 @@ def main(argv):
     fields = line.rstrip('\r\n').split('\t')
     if len(fields) != 6:
       continue
-    (this_barcode, this_order, this_mate, name, seq, qual) = fields
+    this_barcode, this_order, this_mate, name, seq, qual = fields
     this_mate = int(this_mate)
     # If the barcode or order has changed, we're in a new single-stranded family.
     # Process the reads we've previously gathered as one family and start a new family.
-    if this_barcode != barcode or this_order != order or this_mate != mate:
-      duplex[(order, mate)] = family
+    new_barcode = this_barcode != barcode
+    new_order = this_order != order
+    new_mate = this_mate != mate
+    if new_barcode or new_order or new_mate:
+      if order is not None and mate is not None:
+        duplex[(order, mate)] = family
       # We're at the end of the duplex pair if the barcode changes or if the order changes without
       # the mate changing, or vice versa (the second read in each duplex comes when the barcode
       # stays the same while both the order and mate switch). Process the duplex and start
       # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
-      if this_barcode != barcode or not (this_order != order and this_mate != mate):
-        # sys.stderr.write('New duplex:  {}, {}, {}\n'.format(this_barcode, this_order, this_mate))
-        process_duplex(duplex, barcode, workers=workers, stats=stats, incl_sscs=args.incl_sscs,
-                       sscs_fh=sscs_fh, min_reads=args.min_reads, qual_thres=qual_thres)
+      if barcode is not None and (new_barcode or not (new_order and new_mate)):
+        output, sscs, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode,
+                                                             args.incl_sscs, args.min_reads,
+                                                             qual_thres)
+        process_results(output, sscs, run_stats, stats, sscs_fh)
         duplex = collections.OrderedDict()
-      # else:
-      #   sys.stderr.write('Same duplex: {}, {}, {}\n'.format(this_barcode, this_order, this_mate))
       barcode = this_barcode
       order = this_order
       mate = this_mate
@@ -167,15 +162,21 @@ def main(argv):
     all_reads += 1
   # Process the last family.
   duplex[(order, mate)] = family
-  process_duplex(duplex, barcode, workers=workers, stats=stats, incl_sscs=args.incl_sscs,
-                 sscs_fh=sscs_fh, min_reads=args.min_reads, qual_thres=qual_thres)
+  output, sscs, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode,
+                                                       args.incl_sscs, args.min_reads, qual_thres)
+  process_results(output, sscs, run_stats, stats, sscs_fh)
 
-  if args.processes > 1:
-    close_workers(workers)
-    compile_results(workers)
-    delete_tempfiles(workers)
+  # Do one last loop through the workers, reading the remaining results and stopping them.
+  # Start at the worker after the last one processed by the previous loop.
+  start = current_worker_i + 1
+  for i in range(len(workers)):
+    worker_i = (start + i) % args.processes
+    worker = workers[worker_i]
+    output, sscs, run_stats = worker['parent_pipe'].recv()
+    process_results(output, sscs, run_stats, stats, sscs_fh)
+    worker['parent_pipe'].send(None)
 
-  if args.sscs_file:
+  if sscs_fh:
     sscs_fh.close()
   if infile is not sys.stdin:
     infile.close()
@@ -198,99 +199,64 @@ def main(argv):
                    test=args.test, fail='warn')
 
 
-def open_workers(num_workers, args):
+def open_workers(num_workers):
   """Open the required number of worker processes."""
-  script_path = os.path.realpath(sys.argv[0])
   workers = []
   for i in range(num_workers):
-    command = ['python', script_path]
-    arguments = gather_args(sys.argv, args.infile)
-    command.extend(arguments)
-    stats_subfile = None
-    if args.stats_file:
-      if args.stats_file == '-':
-        stats_subfile = '-'
-      else:
-        stats_subfile = "{}.{}.log".format(args.stats_file, i)
-      command.extend(['-s', stats_subfile])
-    outfile = tempfile.NamedTemporaryFile('w', delete=False, prefix='sscs.out.part.')
-    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=outfile)
-    worker = {'proc':process, 'outfile':outfile, 'stats':stats_subfile}
+    worker = open_worker()
     workers.append(worker)
   return workers
 
 
-def gather_args(args, infile, excluded_flags={},
-                excluded_args={'-p', '--processes', '-l', '--log', '-s', '--sscs-file'}):
-  """Take the full list of command-line arguments and return only the ones which
-  should be passed to worker processes.
-  Excludes the 0th argument (the command name), the input filename ("infile"), all
-  arguments in "excluded_flags", and all arguments in "excluded_args" plus the
-  arguments which follow."""
-  out_args = []
-  skip = True
-  for arg in args:
-    if skip:
-      skip = False
-      continue
-    if arg in excluded_flags:
-      continue
-    if arg in excluded_args:
-      skip = True
-      continue
-    if arg == infile:
-      continue
-    out_args.append(arg)
-  return out_args
+def open_worker():
+  parent_pipe, child_pipe = multiprocessing.Pipe()
+  process = multiprocessing.Process(target=worker_function, args=(child_pipe,))
+  process.start()
+  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe}
+  return worker
 
 
-def delegate(worker, duplex, barcode):
-  """Send a family to a worker process."""
-  for (order, mate), family in duplex.items():
-    for read in family:
-      line = '{}\t{}\t{}\t{name}\t{seq}\t{qual}\n'.format(barcode, order, mate, **read)
-    if family:
-      worker['proc'].stdin.write(line)
+def worker_function(child_pipe):
+  while True:
+    args = child_pipe.recv()
+    if args is None:
+      break
+    try:
+      child_pipe.send(process_duplex(*args))
+    except Exception:
+      child_pipe.send((None, None))
+      raise
 
 
-def close_workers(workers):
-  for worker in workers:
-    worker['outfile'].close()
-    worker['proc'].stdin.close()
+def delegate(workers, stats, *args):
+  worker_i = stats['duplexes'] % len(workers)
+  worker = workers[worker_i]
+  # Receive results from the last duplex the worker processed, if any.
+  if stats['duplexes'] >= len(workers):
+    output, sscs, run_stats = worker['parent_pipe'].recv()
+  else:
+    output, sscs, run_stats = '', '', {}
+  if output is None and run_stats is None:
+    logging.warning('Worker {} died.'.format(worker['process'].name))
+    worker = open_worker()
+    workers[worker_i] = worker
+    output, run_stats = '', '', {}
+  stats['duplexes'] += 1
+  # Send in a new duplex to the worker.
+  worker['parent_pipe'].send(args)
+  return output, sscs, run_stats, worker_i
 
 
-def compile_results(workers):
-  for worker in workers:
-    worker['proc'].wait()
-    with open(worker['outfile'].name, 'r') as outfile:
-      for line in outfile:
-        sys.stdout.write(line)
-
-
-def delete_tempfiles(workers):
-  for worker in workers:
-    os.remove(worker['outfile'].name)
-    if worker['stats']:
-      os.remove(worker['stats'])
-
-
-def process_duplex(duplex, barcode, workers=None, stats=None, incl_sscs=False, sscs_fh=None,
-                   min_reads=1, qual_thres=' '):
-  stats['families'] += 1
-  # Are we the controller process or a worker?
-  if workers is not None:
-    i = stats['families'] % len(workers)
-    worker = workers[i]
-    delegate(worker, duplex, barcode)
-    return
-  # We're a worker. Actually process the family.
+def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, qual_thres=' '):
+  logger = get_multi_logger()
+  logger.info('Starting duplex {}'.format(barcode))
   start = time.time()
   consensi = []
   reads_per_strand = []
   duplex_mate = None
   for (order, mate), family in duplex.items():
-    reads = len(family)
-    if reads < min_reads:
+    nreads = len(family)
+    if nreads < min_reads:
       continue
     # The mate number for the duplex consensus. It's arbitrary, but all that matters is that the
     # two mates have different numbers. This system ensures that:
@@ -302,63 +268,69 @@ def process_duplex(duplex, barcode, workers=None, stats=None, incl_sscs=False, s
     seqs = [read['seq'] for read in family]
     quals = [read['qual'] for read in family]
     consensi.append(consensus.get_consensus(seqs, quals, qual_thres=qual_thres))
-    reads_per_strand.append(reads)
+    reads_per_strand.append(nreads)
   assert len(consensi) <= 2
-  if sscs_fh:
-    for cons, (order, mate), reads in zip(consensi, duplex.keys(), reads_per_strand):
-      sscs_fh.write('>{bar}.{order}.{mate} {reads}\n'.format(bar=barcode, order=order, mate=mate,
-                                                             reads=reads))
-      sscs_fh.write(cons+'\n')
+  sscs = ''
+  for cons, (order, mate), nreads in zip(consensi, duplex.keys(), reads_per_strand):
+    sscs += '>{bar}.{order}.{mate} {nreads}\n{cons}\n'.format(bar=barcode, order=order, mate=mate,
+                                                              nreads=nreads, cons=cons)
+  output = ''
   if len(consensi) == 1 and incl_sscs:
-    print_duplex(consensi[0], barcode, duplex_mate, reads_per_strand)
+    output = format_consensus(consensi[0], barcode, duplex_mate, reads_per_strand)
   elif len(consensi) == 2:
     align = swalign.smith_waterman(*consensi)
     #TODO: log error & return if len(align.target) != len(align.query)
     cons = consensus.build_consensus_duplex_simple(align.target, align.query)
-    print_duplex(cons, barcode, duplex_mate, reads_per_strand)
+    output = format_consensus(cons, barcode, duplex_mate, reads_per_strand)
   elapsed = time.time() - start
-  logging.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
-  if stats and len(consensi) > 0:
-    stats['time'] += elapsed
-    stats['reads'] += sum(reads_per_strand)
-    stats['runs'] += 1
-
-
-def print_duplex(cons, barcode, mate, reads_per_strand, outfile=sys.stdout):
-  header = '>{bar}.{mate} {reads}'.format(bar=barcode, mate=mate,
-                                          reads='-'.join(map(str, reads_per_strand)))
-  outfile.write(header+'\n')
-  outfile.write(cons+'\n')
-
-
-def read_fasta(fasta, is_file=True):
-  """Quick and dirty FASTA parser. Return the sequences and their names.
-  Returns a list of sequences. Each is a dict of 'name' and 'seq'.
-  Warning: Reads the entire contents of the file into memory at once."""
-  sequences = []
-  seq_lines = []
-  seq_name = None
-  if is_file:
-    with open(fasta) as fasta_file:
-      fasta_lines = fasta_file.readlines()
+  logger.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
+  if len(consensi) > 0:
+    run_stats = {'time':elapsed, 'runs':1, 'reads':sum(reads_per_strand)}
   else:
-    fasta_lines = fasta.splitlines()
-  for line in fasta_lines:
-    if line.startswith('>'):
-      if seq_lines:
-        sequences.append({'name':seq_name, 'seq':''.join(seq_lines)})
-      seq_lines = []
-      seq_name = line.rstrip('\r\n')[1:]
-      continue
-    seq_lines.append(line.strip())
-  if seq_lines:
-    sequences.append({'name':seq_name, 'seq':''.join(seq_lines)})
-  return sequences
+    run_stats = {'time':0, 'runs':0, 'reads':0}
+  return output, sscs, run_stats
+
+
+def get_multi_logger():
+  # Get config info from root logger.
+  root_logger = logging.getLogger()
+  loglevel = root_logger.getEffectiveLevel()
+  stream = root_logger.handlers[0].stream
+  # Get a multiprocessing logger and configure it the same as the root logger.
+  logger = multiprocessing.get_logger()
+  logger.setLevel(loglevel)
+  if len(logger.handlers) > 0:
+    logger.handlers[0].stream = stream
+  else:
+    logger.addHandler(logging.StreamHandler(stream=stream))
+  return logger
+
+
+def format_consensus(cons, barcode, mate, reads_per_strand):
+  reads_str = '-'.join(map(str, reads_per_strand))
+  return '>{bar}.{mate} {reads}\n{cons}\n'.format(bar=barcode, mate=mate, reads=reads_str, cons=cons)
+
+
+def process_results(output, sscs, run_stats, stats, sscs_fh):
+  for key, value in run_stats.items():
+    stats[key] += value
+  sys.stdout.write(output)
+  if sscs_fh:
+    sscs.fh.write(sscs)
+
+
+def tone_down_logger():
+  """Change the logging level names from all-caps to capitalized lowercase.
+  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
+  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
+    level_name = logging.getLevelName(level)
+    logging.addLevelName(level, level_name.capitalize())
 
 
 def fail(message):
-  sys.stderr.write(message+"\n")
+  logging.critical(message)
   sys.exit(1)
+
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv))
