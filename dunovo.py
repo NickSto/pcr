@@ -64,7 +64,7 @@ def make_argparser():
     help=wrap('When outputting duplex consensus sequences, include reads without a full duplex '
               '(missing one strand). The result will just be the single-strand consensus of the '
               'remaining read.'))
-  parser.add_argument('-s', '--sscs-file',
+  parser.add_argument('-s', '--sscs-file', type=argparse.FileType('w'),
     help=wrap('Save single-strand consensus sequences in this file (FASTA format).'))
   parser.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
@@ -105,12 +105,8 @@ def main(argv):
     run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
                               test=args.test, fail='warn')
 
-  assert args.processes > 0, '-p must be greater than zero'
-  # Make dict of process_family() parameters that don't change between families.
-  if args.sscs_file:
-    sscs_fh = open(args.sscs_file, 'w')
-  else:
-    sscs_fh = None
+  if args.processes <= 0:
+    fail('Error: --processes must be greater than zero.')
   if args.qual_format == 'sanger':
     qual_thres = chr(args.qual + SANGER_START)
   elif args.qual_format == 'solexa':
@@ -147,10 +143,11 @@ def main(argv):
       # stays the same while both the order and mate switch). Process the duplex and start
       # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
       if barcode is not None and (new_barcode or not (new_order and new_mate)):
+        assert len(duplex) <= 2, duplex.keys()
         output, sscs, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode,
                                                              args.incl_sscs, args.min_reads,
                                                              qual_thres)
-        process_results(output, sscs, run_stats, stats, sscs_fh)
+        process_results(output, sscs, run_stats, stats, args.sscs_file)
         duplex = collections.OrderedDict()
       barcode = this_barcode
       order = this_order
@@ -161,9 +158,10 @@ def main(argv):
     all_reads += 1
   # Process the last family.
   duplex[(order, mate)] = family
+  assert len(duplex) <= 2, duplex.keys()
   output, sscs, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode,
                                                        args.incl_sscs, args.min_reads, qual_thres)
-  process_results(output, sscs, run_stats, stats, sscs_fh)
+  process_results(output, sscs, run_stats, stats, args.sscs_file)
 
   # Do one last loop through the workers, reading the remaining results and stopping them.
   # Start at the worker after the last one processed by the previous loop.
@@ -172,11 +170,11 @@ def main(argv):
     worker_i = (start + i) % args.processes
     worker = workers[worker_i]
     output, sscs, run_stats = worker['parent_pipe'].recv()
-    process_results(output, sscs, run_stats, stats, sscs_fh)
+    process_results(output, sscs, run_stats, stats, args.sscs_file)
     worker['parent_pipe'].send(None)
 
-  if sscs_fh:
-    sscs_fh.close()
+  if args.sscs_file:
+    args.sscs_file.close()
   if args.infile is not sys.stdin:
     args.infile.close()
 
@@ -247,13 +245,45 @@ def delegate(workers, stats, *args):
 
 
 def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, qual_thres=' '):
+  """Create one duplex consensus sequence from a pair of single-stranded families."""
   logger = get_multi_logger()
   logger.info('Starting duplex {}'.format(barcode))
   start = time.time()
-  consensi = []
-  reads_per_strand = []
+  # Construct consensus sequences.
+  sscss, dcs_seq, duplex_mate = make_consensuses(duplex, min_reads, qual_thres)
+  reads_per_strand = [sscs['reads'] for sscs in sscss]
+  # Format output.
+  output, sscs_str = format_outputs(sscss, dcs_seq, duplex_mate, barcode, incl_sscs, reads_per_strand)
+  # Calculate run statistics.
+  elapsed = time.time() - start
+  logger.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
+  if len(sscss) > 0:
+    run_stats = {'time':elapsed, 'runs':1, 'reads':sum(reads_per_strand)}
+  else:
+    run_stats = {'time':0, 'runs':0, 'reads':0}
+  return output, sscs_str, run_stats
+
+
+def make_consensuses(duplex, min_reads, qual_thres):
+  # Make SSCSs.
+  sscss, duplex_mate = make_sscs(duplex, min_reads, qual_thres)
+  # Make DCS, if possible.
+  dcs_seq = None
+  if len(sscss) == 2:
+    align = swalign.smith_waterman(sscss[0]['consensus'], sscss[1]['consensus'])
+    #TODO: log error & return if len(align.target) != len(align.query)
+    dcs_seq = consensus.build_consensus_duplex_simple(align.target, align.query)
+  return sscss, dcs_seq, duplex_mate
+
+
+def make_sscs(duplex, min_reads, qual_thres):
+  """Create single-strand consensus sequences from families of raw reads."""
+  sscss = []
   duplex_mate = None
   for (order, mate), family in duplex.items():
+    logging.info('\t{0}.{1}:'.format(order, mate))
+    for read in family:
+      logging.info('\t\t{name}\t{seq}'.format(**read))
     nreads = len(family)
     if nreads < min_reads:
       continue
@@ -266,28 +296,22 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, qual_thres=' '
       duplex_mate = 2
     seqs = [read['seq'] for read in family]
     quals = [read['qual'] for read in family]
-    consensi.append(consensus.get_consensus(seqs, quals, qual_thres=qual_thres))
-    reads_per_strand.append(nreads)
-  assert len(consensi) <= 2
-  sscs = ''
-  for cons, (order, mate), nreads in zip(consensi, duplex.keys(), reads_per_strand):
-    sscs += '>{bar}.{order}.{mate} {nreads}\n{cons}\n'.format(bar=barcode, order=order, mate=mate,
-                                                              nreads=nreads, cons=cons)
+    consensus_seq = consensus.get_consensus(seqs, quals, qual_thres=qual_thres)
+    sscss.append({'consensus':consensus_seq, 'order':order, 'mate':mate, 'reads':nreads})
+  return sscss, duplex_mate
+
+
+def format_outputs(sscss, dcs_seq, duplex_mate, barcode, incl_sscs, reads_per_strand):
+  # Format output.
+  sscs_str = ''
+  for sscs in sscss:
+    sscs_str += '>{0}.{order}.{mate} {reads}\n{consensus}\n'.format(barcode, **sscs)
   output = ''
-  if len(consensi) == 1 and incl_sscs:
-    output = format_consensus(consensi[0], barcode, duplex_mate, reads_per_strand)
-  elif len(consensi) == 2:
-    align = swalign.smith_waterman(*consensi)
-    #TODO: log error & return if len(align.target) != len(align.query)
-    cons = consensus.build_consensus_duplex_simple(align.target, align.query)
-    output = format_consensus(cons, barcode, duplex_mate, reads_per_strand)
-  elapsed = time.time() - start
-  logger.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
-  if len(consensi) > 0:
-    run_stats = {'time':elapsed, 'runs':1, 'reads':sum(reads_per_strand)}
-  else:
-    run_stats = {'time':0, 'runs':0, 'reads':0}
-  return output, sscs, run_stats
+  if len(sscss) == 1 and incl_sscs:
+    output = format_consensus(sscss[0]['consensus'], barcode, duplex_mate, reads_per_strand)
+  elif len(sscss) == 2:
+    output = format_consensus(dcs_seq, barcode, duplex_mate, reads_per_strand)
+  return output, sscs_str
 
 
 def get_multi_logger():
@@ -305,9 +329,9 @@ def get_multi_logger():
   return logger
 
 
-def format_consensus(cons, barcode, mate, reads_per_strand):
+def format_consensus(seq, barcode, mate, reads_per_strand):
   reads_str = '-'.join(map(str, reads_per_strand))
-  return '>{bar}.{mate} {reads}\n{cons}\n'.format(bar=barcode, mate=mate, reads=reads_str, cons=cons)
+  return '>{bar}.{mate} {reads}\n{seq}\n'.format(bar=barcode, mate=mate, reads=reads_str, seq=seq)
 
 
 def process_results(output, sscs, run_stats, stats, sscs_fh):
@@ -315,7 +339,7 @@ def process_results(output, sscs, run_stats, stats, sscs_fh):
     stats[key] += value
   sys.stdout.write(output)
   if sscs_fh:
-    sscs.fh.write(sscs)
+    sscs_fh.write(sscs)
 
 
 def tone_down_logger():
