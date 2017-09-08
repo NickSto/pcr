@@ -179,6 +179,15 @@ function dunovo_gapqual {
           --incl-sscs -q 25
 }
 
+function dunovo_consthres {
+  _dunovo cons.thres.msa.tsv cons.thres.0.5.sscs_1.fa cons.thres.0.5.sscs_2.fa \
+          cons.thres.0.5.dcs_1.fa cons.thres.0.5.dcs_2.fa \
+          --cons-thres 0.5
+  _dunovo cons.thres.msa.tsv cons.thres.0.7.sscs_1.fa cons.thres.0.7.sscs_2.fa \
+          cons.thres.0.7.dcs_1.fa cons.thres.0.7.dcs_2.fa \
+          --cons-thres 0.7
+}
+
 function stats_diffs {
   echo -e "\tstats.py diffs ::: gaps.msa.tsv:"
   python "$dirname/../utils/stats.py" diffs "$dirname/gaps.msa.tsv" | diff -s - "$dirname/gaps-diffs.out.tsv"
