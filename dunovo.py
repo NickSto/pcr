@@ -38,12 +38,13 @@ def make_argparser():
 
   wrapper = simplewrap.Wrapper()
   wrap = wrapper.wrap
-  parser = argparse.ArgumentParser(usage=USAGE, description=wrap(DESCRIPTION),
+  parser = argparse.ArgumentParser(usage=USAGE, description=wrap(DESCRIPTION), add_help=False,
                                    formatter_class=argparse.RawTextHelpFormatter)
 
   wrapper.width = wrapper.width - 24
-  parser.add_argument('infile', metavar='families.msa.tsv', nargs='?', default=sys.stdin,
-                      type=argparse.FileType('r'),
+  io = parser.add_argument_group('Inputs and outputs')
+  io.add_argument('infile', metavar='families.msa.tsv', nargs='?', default=sys.stdin,
+                  type=argparse.FileType('r'),
     help=wrap('The output of align_families.py. 6 columns:\n'
               '1. (canonical) barcode\n'
               '2. order ("ab" or "ba")\n'
@@ -51,60 +52,66 @@ def make_argparser():
               '4. read name\n'
               '5. aligned sequence\n'
               '6. aligned quality scores.'))
-  parser.add_argument('-1', '--dcs1', metavar='duplex_1.fa', type=argparse.FileType('w'),
+  io.add_argument('-1', '--dcs1', metavar='duplex_1.fa', type=argparse.FileType('w'),
     help=wrap('The file to output the first mates of the duplex consensus sequences into. '
               'Warning: This will be overwritten if it exists!'))
-  parser.add_argument('-2', '--dcs2', metavar='duplex_2.fa', type=argparse.FileType('w'),
+  io.add_argument('-2', '--dcs2', metavar='duplex_2.fa', type=argparse.FileType('w'),
     help=wrap('Same, but for mate 2.'))
-  parser.add_argument('--sscs1', metavar='sscs_1.fa', type=argparse.FileType('w'),
+  io.add_argument('--sscs1', metavar='sscs_1.fa', type=argparse.FileType('w'),
     help=wrap('Save the single-strand consensus sequences (mate 1) in this file (FASTA format). '
               'Warning: This will be overwritten if it exists!'))
-  parser.add_argument('--sscs2', metavar='sscs_2.fa', type=argparse.FileType('w'),
+  io.add_argument('--sscs2', metavar='sscs_2.fa', type=argparse.FileType('w'),
     help=wrap('Save the single-strand consensus sequences (mate 2) in this file (FASTA format). '
               'Warning: This will be overwritten if it exists!'))
-  parser.add_argument('--incl-sscs', action='store_true',
+  io.add_argument('--incl-sscs', action='store_true',
     help=wrap('When outputting duplex consensus sequences, include reads without a full duplex '
               '(missing one strand). The result will just be the single-strand consensus of the '
               'remaining read.'))
-  parser.add_argument('-r', '--min-reads', type=int, default=3,
+  params = parser.add_argument_group('Algorithm parameters')
+  params.add_argument('-r', '--min-reads', type=int, default=3,
     help=wrap('The minimum number of reads (from each strand) required to form a single-strand '
               'consensus. Strands with fewer reads will be skipped. Default: %(default)s.'))
-  parser.add_argument('-q', '--qual', type=int, default=20,
+  params.add_argument('-q', '--qual', type=int, default=20,
     help=wrap('Base quality threshold. Bases below this quality will not be counted. '
               'Default: %(default)s.'))
-  parser.add_argument('-F', '--qual-format', choices=('sanger', 'solexa'), default='sanger',
+  params.add_argument('-F', '--qual-format', choices=('sanger', 'solexa'), default='sanger',
     help=wrap('FASTQ quality score format. Sanger scores are assumed to begin at \'{}\' ({}). '
               'Default: %(default)s.'.format(SANGER_START, chr(SANGER_START))))
-  parser.add_argument('-c', '--cons-thres', type=float, default=0.5,
+  params.add_argument('-c', '--cons-thres', type=float, default=0.5,
     help=wrap('The threshold to use when making consensus sequences. The consensus base must be '
               'present in more than this fraction of the reads, or N will be used. '
               'Default: %(default)s'))
-  parser.add_argument('-C', '--min-cons-reads', type=int, default=0,
+  params.add_argument('-C', '--min-cons-reads', type=int, default=0,
     help=wrap('The minimum number of reads a base must appear in to be used as the consensus base. '
               'If no base at the position appears in at least this many reads, N will be used as '
               'the consensus base. Default: %(default)s'))
-  parser.add_argument('-p', '--processes', type=int, default=1,
-    help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
-  parser.add_argument('--phone-home', action='store_true',
+  phoning = parser.add_argument_group('Feedback')
+  phoning.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
               'version of the tool, the size of the input data, the time taken to process it, and '
               'the IP address of the machine running it. No parameters or filenames are sent. All '
               'the reporting and recording code is available at https://github.com/NickSto/ET.'))
-  parser.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
+  phoning.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
     help=wrap('Tell the script it\'s running on Galaxy. Currently this only affects data reported '
               'when phoning home.'))
-  parser.add_argument('--test', action='store_true',
+  phoning.add_argument('--test', action='store_true',
     help=wrap('If reporting usage data, mark this as a test run.'))
-  parser.add_argument('-v', '--version', action='version', version=str(version.get_version()),
-    help=wrap('Print the version number and exit.'))
-  parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
+  log = parser.add_argument_group('Logging')
+  log.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help=wrap('Print log messages to this file instead of to stderr. Warning: Will overwrite the '
               'file.'))
-  parser.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
+  log.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
                       default=logging.WARNING)
-  parser.add_argument('-V', '--verbose', dest='volume', action='store_const', const=logging.INFO)
-  parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
+  log.add_argument('-V', '--verbose', dest='volume', action='store_const', const=logging.INFO)
+  log.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
+  misc = parser.add_argument_group('Miscellaneous')
+  misc.add_argument('-p', '--processes', type=int, default=1,
+    help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
+  misc.add_argument('-v', '--version', action='version', version=str(version.get_version()),
+    help=wrap('Print the version number and exit.'))
+  misc.add_argument('-h', '--help', action='store_true',
+    help='Print this text on usage and arguments.')
 
   return parser
 
@@ -113,6 +120,9 @@ def main(argv):
 
   parser = make_argparser()
   args = parser.parse_args(argv[1:])
+  if args.help:
+    parser.print_help()
+    return 1
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
