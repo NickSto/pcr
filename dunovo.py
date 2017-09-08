@@ -77,7 +77,12 @@ def make_argparser():
               'Default: %(default)s.'.format(SANGER_START, chr(SANGER_START))))
   parser.add_argument('-c', '--cons-thres', type=float, default=0.5,
     help=wrap('The threshold to use when making consensus sequences. The consensus base must be '
-              'present in more than this fraction of the reads. Default: %(default)s'))
+              'present in more than this fraction of the reads, or N will be used. '
+              'Default: %(default)s'))
+  parser.add_argument('-C', '--min-cons-reads', type=int, default=0,
+    help=wrap('The minimum number of reads a base must appear in to be used as the consensus base. '
+              'If no base at the position appears in at least this many reads, N will be used as '
+              'the consensus base. Default: %(default)s'))
   parser.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
   parser.add_argument('--phone-home', action='store_true',
@@ -126,6 +131,10 @@ def main(argv):
     qual_thres = chr(args.qual + SOLEXA_START)
   else:
     fail('Error: unrecognized --qual-format.')
+  if args.min_cons_reads > args.min_reads:
+    fail('Error: --min-reads must be greater than --min-cons-reads (or you\'ll have a lot of '
+         'consensus sequences with only N\'s!). If you want to exclude families with fewer than X '
+         'reads, give --min-reads X instead of --min-cons-reads X.')
   if not any((args.dcs1, args.dcs2, args.sscs1, args.sscs2)):
     fail('Error: must specify an output file!')
   # A dict of output filehandles.
@@ -170,10 +179,9 @@ def main(argv):
         # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
         if barcode is not None and (new_barcode or not (new_order and new_mate)):
           assert len(duplex) <= 2, duplex.keys()
-          dcs_str, sscs_strs, duplex_mate, run_stats, i = delegate(workers, stats, duplex, barcode,
-                                                                   args.incl_sscs, args.min_reads,
-                                                                   args.cons_thres, qual_thres)
-          process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
+          results = delegate(workers, stats, duplex, barcode, args.incl_sscs, args.min_reads,
+                             args.cons_thres, args.min_cons_reads, qual_thres)
+          process_results(filehandles, stats, *results[1:])
           duplex = collections.OrderedDict()
         barcode = this_barcode
         order = this_order
@@ -185,19 +193,19 @@ def main(argv):
     # Process the last family.
     duplex[(order, mate)] = family
     assert len(duplex) <= 2, duplex.keys()
-    dcs_str, sscs_strs, duplex_mate, run_stats, worker_i = delegate(workers, stats, duplex, barcode,
-                                                                    args.incl_sscs, args.min_reads,
-                                                                    args.cons_thres, qual_thres)
-    process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
+    results = delegate(workers, stats, duplex, barcode, args.incl_sscs, args.min_reads,
+                       args.cons_thres, args.min_cons_reads, qual_thres)
+    process_results(filehandles, stats, *results[1:])
+    current_worker_i = results[0]
 
     # Do one last loop through the workers, reading the remaining results and stopping them.
     # Start at the worker after the last one processed by the previous loop.
-    start = worker_i + 1
+    start = current_worker_i + 1
     for i in range(len(workers)):
       worker_i = (start + i) % args.processes
       worker = workers[worker_i]
-      dcs_str, sscs_strs, duplex_mate, run_stats = worker['parent_pipe'].recv()
-      process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles)
+      results = worker['parent_pipe'].recv()
+      process_results(filehandles, stats, *results)
 
   except Exception:
     raise
@@ -267,7 +275,7 @@ def delegate(workers, stats, *args):
   stats['duplexes'] += 1
   # Send in a new duplex to the worker.
   worker['parent_pipe'].send(args)
-  return dcs_str, sscs_strs, duplex_mate, run_stats, worker_i
+  return worker_i, dcs_str, sscs_strs, duplex_mate, run_stats
 
 
 #################### Worker processes ####################
@@ -286,7 +294,8 @@ def worker_function(child_pipe):
       raise
 
 
-def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5, qual_thres=' '):
+def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5, min_cons_reads=0,
+                   qual_thres=' '):
   """Create one duplex consensus sequence from a pair of single-stranded families."""
   # The code in the main loop ensures that "duplex" contains only reads belonging to one final
   # duplex consensus read: ab.1 and ba.2 reads OR ab.2 and ba.1 reads. (Of course, one half might
@@ -295,7 +304,8 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5
   logger.info('Starting duplex {}'.format(barcode))
   start = time.time()
   # Construct consensus sequences.
-  sscss, dcs_seq, duplex_mate = make_consensuses(duplex, min_reads, cons_thres, qual_thres)
+  sscss, dcs_seq, duplex_mate = make_consensuses(duplex, min_reads, cons_thres, min_cons_reads,
+                                                 qual_thres)
   reads_per_strand = [sscs['reads'] for sscs in sscss]
   # Format output.
   dcs_str, sscs_strs = format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand)
@@ -309,9 +319,9 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5
   return dcs_str, sscs_strs, duplex_mate, run_stats
 
 
-def make_consensuses(duplex, min_reads, cons_thres, qual_thres):
+def make_consensuses(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
   # Make SSCSs.
-  sscss, duplex_mate = make_sscs(duplex, min_reads, cons_thres, qual_thres)
+  sscss, duplex_mate = make_sscs(duplex, min_reads, cons_thres, min_cons_reads, qual_thres)
   # Make DCS, if possible.
   dcs_seq = None
   if len(sscss) == 2:
@@ -321,7 +331,7 @@ def make_consensuses(duplex, min_reads, cons_thres, qual_thres):
   return sscss, dcs_seq, duplex_mate
 
 
-def make_sscs(duplex, min_reads, cons_thres, qual_thres):
+def make_sscs(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
   """Create single-strand consensus sequences from families of raw reads."""
   sscss = []
   duplex_mate = None
@@ -341,7 +351,8 @@ def make_sscs(duplex, min_reads, cons_thres, qual_thres):
       duplex_mate = 2
     seqs = [read['seq'] for read in family]
     quals = [read['qual'] for read in family]
-    consensus_seq = consensus.get_consensus(seqs, quals, cons_thres=cons_thres, qual_thres=qual_thres)
+    consensus_seq = consensus.get_consensus(seqs, quals, cons_thres=cons_thres,
+                                            min_reads=min_cons_reads, qual_thres=qual_thres)
     sscss.append({'consensus':consensus_seq, 'order':order, 'mate':mate, 'reads':nreads})
   return sscss, duplex_mate
 
@@ -365,7 +376,7 @@ def format_consensus(seq, barcode, reads_per_strand):
   return '>{bar} {reads}\n{seq}\n'.format(bar=barcode, reads=reads_str, seq=seq)
 
 
-def process_results(dcs_str, sscs_strs, duplex_mate, run_stats, stats, filehandles):
+def process_results(filehandles, stats, dcs_str, sscs_strs, duplex_mate, run_stats):
   if dcs_str is None and sscs_strs is None:
     return
   for key, value in run_stats.items():

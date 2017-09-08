@@ -21,6 +21,7 @@ const char *IUPAC_BASES = "N...A.M..CR...WS.....YN..GN......N.K...N.........T...
 //                                  15        16        17
                            "..N.........................-";
 #define THRES_DEFAULT 0.5
+#define MIN_DEFAULT 0
 #define WIN_LEN 4
 #define GAP_CHAR ' '
 
@@ -34,15 +35,15 @@ int **init_votes(int seq_len);
 void free_votes(int *votes[], int seq_len);
 void print_votes(char *consensus, int *votes[], int seq_len);
 char *rm_gaps(char *consensus, int cons_len);
-char *build_consensus(int *votes[], int seq_len, double thres);
+char *build_consensus(int *votes[], int seq_len, double thres, int min_reads);
 char *build_consensus_duplex(int *votes1[], int *votes2[], int seq_len, double thres);
 char *build_consensus_duplex_simple(char *cons1, char *cons2, int gapped);
 int get_base_prime(char base);
-char *get_consensus(char *align[], char *quals[], int n_seqs, int seq_len, double thres,
-                    char qual_thres, int gapped);
+char *get_consensus(char *align[], char *quals[], int n_seqs, int seq_len, double cons_thres,
+                    int min_reads, char qual_thres, int gapped);
 char *get_consensus_duplex(char *align1[], char *align2[], char *quals1[], char *quals2[],
                            int n_seqs1, int n_seqs2, int seq_len, double cons_thres,
-                           char qual_thres, int gapped, char *method);
+                           int min_reads, char qual_thres, int gapped, char *method);
 
 
 // Tally the different bases at each position in an alignment.
@@ -370,7 +371,7 @@ char *rm_gaps(char *consensus, int cons_len) {
 }
 
 
-char *build_consensus(int *votes[], int seq_len, double thres) {
+char *build_consensus(int *votes[], int seq_len, double thres, int min_reads) {
   char *consensus = malloc(sizeof(char) * seq_len + 1);
   
   int i, j;
@@ -386,7 +387,7 @@ char *build_consensus(int *votes[], int seq_len, double thres) {
       }
       if (total == 0) {
         consensus[i] = 'N';
-      } else if ((double)max_vote/total > thres) {
+      } else if ((double)max_vote/total > thres && max_vote >= min_reads) {
         consensus[i] = max_base;
       } else {
         consensus[i] = 'N';
@@ -506,7 +507,7 @@ int get_base_prime(char base) {
 // Give 0 as "quals" to not use quality scores, and -1.0 as "cons_thres" to use the default
 // consensus threshold when evaluating base votes.
 char *get_consensus(char *align[], char *quals[], int n_seqs, int seq_len, double cons_thres,
-                    char qual_thres, int gapped) {
+                    int min_reads, char qual_thres, int gapped) {
   if (cons_thres == -1.0) {
     cons_thres = THRES_DEFAULT;
   }
@@ -516,7 +517,7 @@ char *get_consensus(char *align[], char *quals[], int n_seqs, int seq_len, doubl
   } else {
     votes = get_votes_qual(align, quals, n_seqs, seq_len, qual_thres);
   }
-  char *consensus_gapped = build_consensus(votes, seq_len, cons_thres);
+  char *consensus_gapped = build_consensus(votes, seq_len, cons_thres, min_reads);
   char *consensus;
   if (gapped) {
     consensus = consensus_gapped;
@@ -530,7 +531,7 @@ char *get_consensus(char *align[], char *quals[], int n_seqs, int seq_len, doubl
 
 char *get_consensus_duplex(char *align1[], char *align2[], char *quals1[], char *quals2[],
                            int n_seqs1, int n_seqs2, int seq_len, double cons_thres,
-                           char qual_thres, int gapped, char *method) {
+                           int min_reads, char qual_thres, int gapped, char *method) {
   if (cons_thres == -1.0) {
     cons_thres = THRES_DEFAULT;
   }
@@ -547,8 +548,8 @@ char *get_consensus_duplex(char *align1[], char *align2[], char *quals1[], char 
   if (!strncmp(method, "freq", 4)) {
     consensus_gapped = build_consensus_duplex(votes1, votes2, seq_len, cons_thres);
   } else if (!strncmp(method, "iupac", 5)) {
-    char *cons1 = build_consensus(votes1, seq_len, cons_thres);
-    char *cons2 = build_consensus(votes2, seq_len, cons_thres);
+    char *cons1 = build_consensus(votes1, seq_len, cons_thres, min_reads);
+    char *cons2 = build_consensus(votes2, seq_len, cons_thres, min_reads);
     consensus_gapped = build_consensus_duplex_simple(cons1, cons2, 1);
   } else {
     return "";
@@ -601,11 +602,10 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  get_gap_quals(align[0]);
-  return 0;
+  // get_gap_quals(align[0]);
 
   int **votes = get_votes_simple(align, argc-1, seq_len);
-  char *consensus = build_consensus(votes, seq_len, THRES_DEFAULT);
+  char *consensus = build_consensus(votes, seq_len, THRES_DEFAULT, MIN_DEFAULT);
   print_votes(consensus, votes, seq_len);
   printf("%s\n", consensus);
   free_votes(votes, seq_len);

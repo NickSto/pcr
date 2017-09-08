@@ -182,10 +182,10 @@ function dunovo_gapqual {
 function dunovo_consthres {
   _dunovo cons.thres.msa.tsv cons.thres.0.5.sscs_1.fa cons.thres.0.5.sscs_2.fa \
           cons.thres.0.5.dcs_1.fa cons.thres.0.5.dcs_2.fa \
-          --cons-thres 0.5
+          --min-cons-reads 3 --cons-thres 0.5
   _dunovo cons.thres.msa.tsv cons.thres.0.7.sscs_1.fa cons.thres.0.7.sscs_2.fa \
           cons.thres.0.7.dcs_1.fa cons.thres.0.7.dcs_2.fa \
-          --cons-thres 0.7
+          --min-cons-reads 3 --cons-thres 0.7
 }
 
 function stats_diffs {

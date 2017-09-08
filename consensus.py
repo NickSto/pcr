@@ -45,7 +45,7 @@ def main(argv):
 
 
 # N.B.: The quality scores must be aligned with their accompanying sequences.
-def get_consensus(align, quals=[], cons_thres=-1.0, qual_thres=' ', gapped=False):
+def get_consensus(align, quals=[], cons_thres=-1.0, min_reads=0, qual_thres=' ', gapped=False):
   cons_thres_c = ctypes.c_double(cons_thres)
   qual_thres_c = ctypes.c_char(qual_thres)
   n_seqs = len(align)
@@ -59,9 +59,9 @@ def get_consensus(align, quals=[], cons_thres=-1.0, qual_thres=' ', gapped=False
     if seq_len is None:
       seq_len = len(seq)
     else:
-      assert seq_len == len(seq), ('All sequences in the alignment must be the same length: '
-                                   '{}bp != {}bp.\nAlignment:\n{}'.format(seq_len, len(seq),
-                                                                          '\n'.join(align)))
+      if seq_len != len(seq):
+        raise AssertionError('All sequences in the alignment must be the same length: {}bp != {}bp.'
+                             '\nAlignment:\n{}'.format(seq_len, len(seq), '\n'.join(align)))
   align_c = (ctypes.c_char_p * n_seqs)()
   for i, seq in enumerate(align):
     align_c[i] = ctypes.c_char_p(seq)
@@ -70,13 +70,13 @@ def get_consensus(align, quals=[], cons_thres=-1.0, qual_thres=' ', gapped=False
     quals_c[i] = ctypes.c_char_p(qual)
   if not quals:
     quals_c = 0
-  return consensus.get_consensus(align_c, quals_c, n_seqs, seq_len, cons_thres_c, qual_thres_c,
-                                 gapped_c)
+  return consensus.get_consensus(align_c, quals_c, n_seqs, seq_len, cons_thres_c, min_reads,
+                                 qual_thres_c, gapped_c)
 
 
 # N.B.: The quality scores must be aligned with their accompanying sequences.
-def get_consensus_duplex(align1, align2, quals1=[], quals2=[], cons_thres=-1.0, qual_thres=' ',
-                         method='iupac'):
+def get_consensus_duplex(align1, align2, quals1=[], quals2=[], cons_thres=-1.0, min_reads=0,
+                         qual_thres=' ', method='iupac'):
   assert method in ('iupac', 'freq')
   cons_thres_c = ctypes.c_double(cons_thres)
   qual_thres_c = ctypes.c_char(qual_thres)
@@ -108,7 +108,7 @@ def get_consensus_duplex(align1, align2, quals1=[], quals2=[], cons_thres=-1.0, 
   if not quals2:
     quals2_c = 0
   return consensus.get_consensus_duplex(align1_c, align2_c, quals1_c, quals2_c, n_seqs1, n_seqs2,
-                                        seq_len, cons_thres_c, qual_thres_c, method)
+                                        seq_len, cons_thres_c, min_reads, qual_thres_c, method)
 
 
 def build_consensus_duplex_simple(cons1, cons2, gapped=False):
