@@ -7,4 +7,4 @@ all:
 	gcc $(CFLAGS) consensus.c -o libconsensus.so
 
 clean:
-	rm libalign.so libswalign.so libseqtools.so libconsensus.so
+	rm -f libalign.so libswalign.so libseqtools.so libconsensus.so
