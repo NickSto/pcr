@@ -1,17 +1,17 @@
 <?xml version="1.0"?>
-<tool id="correct_barcodes" name="Du Novo: Correct barcodes" version="0.7.6">
+<tool id="correct_barcodes" name="Du Novo: Correct barcodes" version="0.8.1">
   <description>of duplex sequencing reads</description>
   <requirements>
     <requirement type="package" version="2.2.5">bowtie2</requirement>
     <requirement type="package" version="0.1.18">samtools</requirement>
     <requirement type="package" version="1.9">networkx</requirement>
-    <requirement type="package" version="0.7.6">dunovo</requirement>
+    <requirement type="package" version="0.8.1">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
   <command detect_errors="exit_code"><![CDATA[
     baralign.sh '$input' refdir barcodes.bam
     && samtools view -f 256 barcodes.bam
-    | correct.py --galaxy $phone -d $dist -m $mapq -p $pos '$input' refdir/barcodes.fa
+    | correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos '$input' refdir/barcodes.fa
     | sort
     > '$output'
   ]]>

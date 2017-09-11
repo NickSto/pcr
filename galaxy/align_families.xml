@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
-<tool id="align_families" name="Du Novo: Align families" version="0.7.6">
+<tool id="align_families" name="Du Novo: Align families" version="0.8.1">
   <description>of duplex sequencing reads</description>
   <requirements>
     <requirement type="package" version="7.221">mafft</requirement>
-    <requirement type="package" version="0.7.6">dunovo</requirement>
+    <requirement type="package" version="0.8.1">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
-  <command detect_errors="exit_code">align_families.py --galaxy $phone -p \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
+  <command detect_errors="exit_code">align_families.py --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Input reads" help="with barcodes, grouped by family"/>

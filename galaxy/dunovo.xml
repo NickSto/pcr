@@ -1,25 +1,21 @@
 <?xml version="1.0"?>
-<tool id="dunovo" name="Du Novo: Make consensus reads" version="0.7.6">
+<tool id="dunovo" name="Du Novo: Make consensus reads" version="0.8.1">
   <description>from duplex sequencing alignments</description>
   <requirements>
-    <requirement type="package" version="0.7.6">dunovo</requirement>
+    <requirement type="package" version="0.8.1">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
-  <command detect_errors="exit_code"><![CDATA[
-    dunovo.py --galaxy $phone -r $min_reads -q $qual_thres -F $qual_format '$input'
+  <command detect_errors="exit_code">
+    dunovo.py --galaxy $phone --processes \${GALAXY_SLOTS:-1} --min-reads $min_reads --qual $qual_thres --qual-format $qual_format --cons-thres $cons_thres --min-cons-reads $min_cons_reads '$input' --dcs1 '$dcs1' --dcs2 '$dcs2'
     #if $keep_sscs:
-      --sscs-file sscs.fa
+      --sscs1 '$sscs1' --sscs2 '$sscs2'
     #end if
-    > duplex.fa
-    && outconv.py duplex.fa -1 '$dcs1' -2 '$dcs2'
-    #if $keep_sscs:
-      && outconv.py sscs.fa -1 '$sscs1' -2 '$sscs2'
-    #end if
-  ]]>
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Aligned input reads" />
     <param name="min_reads" type="integer" value="3" min="1" label="Minimum reads per family" help="Single-strand families with fewer than this many reads will be skipped."/>
+    <param name="cons_thres" type="float" value="0.5" min="0.5" max="1.0" label="The threshold to use when making consensus sequences. The consensus base must be present in more than this fraction of the reads, or &quot;N&quot; will be used."/>
+    <param name="min_cons_reads" type="integer" value="0" min="0" label="The minimum number of reads a base must appear in to be used as the consensus base. If no base at the position appears in at least this many reads, &quot;N&quot; will be used."/>
     <param name="qual_thres" type="integer" value="25" min="1" label="Minimum base quality" help="Bases with a PHRED score less than this will not be counted in the consensus making."/>
     <param name="qual_format" type="select" label="FASTQ format" help="Solexa should also work for Illumina 1.3+ and 1.5+, and Sanger should work for Illumina 1.8+">
       <option value="sanger" selected="true">Sanger (PHRED 0 = &quot;!&quot;)</option>
@@ -41,8 +37,8 @@
   <tests>
     <test>
       <param name="input" value="families.msa.tsv"/>
-      <output name="dcs1" file="families.cons_1.fa"/>
-      <output name="dcs2" file="families.cons_2.fa"/>
+      <output name="dcs1" file="families.dcs_1.fa"/>
+      <output name="dcs2" file="families.dcs_2.fa"/>
     </test>
   </tests>
   <citations>
