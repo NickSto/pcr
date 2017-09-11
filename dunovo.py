@@ -122,7 +122,7 @@ def main(argv):
   args = parser.parse_args(argv[1:])
   if args.help:
     parser.print_help()
-    return 1
+    return 0
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
