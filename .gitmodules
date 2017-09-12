@@ -4,3 +4,6 @@
 [submodule "ET"]
 	path = ET
 	url = https://github.com/NickSto/ET.git
+[submodule "kalign"]
+	path = kalign
+	url = https://github.com/makrutenko/kalign-dunovo.git
