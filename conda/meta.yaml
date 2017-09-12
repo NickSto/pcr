@@ -1,11 +1,12 @@
+{% set version = "0.8.1" %}
 
 package:
   name: dunovo
-  version: '0.8.1'
+  version: {{ version }}
 
 source:
-  fn: v0.8.1.tar.gz
-  url: https://github.com/galaxyproject/dunovo/archive/v0.8.1.tar.gz
+  fn: v{{ version }}.tar.gz
+  url: https://github.com/galaxyproject/dunovo/archive/v{{ version }}.tar.gz
   sha256: f85fd35ef67c8f76af0d556a4babe9acf7b8abdd8a77232d4f4763cc7de60eed
 
 build:
