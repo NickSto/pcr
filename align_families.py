@@ -28,6 +28,8 @@ REQUIRED_COMMANDS = ['mafft']
 USAGE = '$ %(prog)s [options] families.tsv > families.msa.tsv'
 DESCRIPTION = """Read in sorted FASTQ data and do multiple sequence alignments of each family."""
 
+METHOD = os.getenv('METHOD', 'mafft')
+# print METHOD
 
 def make_argparser():
 
@@ -290,24 +292,35 @@ def align_family(family, mate):
     return None
   elif len(family) == 1:
     # If there's only one read pair, there's no alignment to be done (and MAFFT won't accept it).
-    seq_alignment = [{'name':family[0]['name'+mate], 'seq':family[0]['seq'+mate]}]
+    aligned_seqs = [family[0]['seq'+mate]]
   else:
     # Do the multiple sequence alignment.
-    seq_alignment = make_msa(family, mate)
+    aligned_seqs = make_msa(family, mate, method=METHOD)
   # Transfer the alignment to the quality scores.
-  ## Get a list of all sequences in the alignment (mafft output).
-  seqs = [read['seq'] for read in seq_alignment]
   ## Get a list of all quality scores in the family for this mate.
   quals_raw = [pair['qual'+mate] for pair in family]
-  qual_alignment = seqtools.transfer_gaps_multi(quals_raw, seqs, gap_char_out=' ')
+  qual_alignment = seqtools.transfer_gaps_multi(quals_raw, aligned_seqs, gap_char_out=' ')
   # Package them up in the output data structure.
   alignment = []
-  for aligned_seq, aligned_qual in zip(seq_alignment, qual_alignment):
-    alignment.append({'name':aligned_seq['name'], 'seq':aligned_seq['seq'], 'qual':aligned_qual})
+  for pair, aligned_seq, aligned_qual in zip(family, aligned_seqs, qual_alignment):
+    alignment.append({'name':pair['name'+mate], 'seq':aligned_seq, 'qual':aligned_qual})
   return alignment
 
 
-def make_msa(family, mate):
+def make_msa(family, mate, method='mafft'):
+  if method == 'mafft':
+    return make_msa_mafft(family, mate)
+  elif method == 'kalign':
+    return make_msa_kalign(family, mate)
+
+
+def make_msa_kalign(family, mate):
+  import kalign
+  seqs = [pair['seq'+mate] for pair in family]
+  return kalign.align(seqs)
+
+
+def make_msa_mafft(family, mate):
   """Perform a multiple sequence alignment on a set of sequences and parse the result.
   Uses MAFFT."""
   #TODO: Replace with tempfile.mkstemp()?
@@ -326,35 +339,24 @@ def make_msa(family, mate):
     finally:
       # Make sure we delete the temporary file.
       os.remove(family_file.name)
-  return read_fasta(output, is_file=False, upper=True)
+  return read_fasta(output)
 
 
-def read_fasta(fasta, is_file=True, upper=False):
+def read_fasta(fasta):
   """Quick and dirty FASTA parser. Return the sequences and their names.
-  Returns a list of sequences. Each is a dict of 'name' and 'seq'.
+  Returns a list of sequences.
   Warning: Reads the entire contents of the file into memory at once."""
   sequences = []
   sequence = ''
-  seq_name = None
-  if is_file:
-    with open(fasta) as fasta_file:
-      fasta_lines = fasta_file.readlines()
-  else:
-    fasta_lines = fasta.splitlines()
-  for line in fasta_lines:
+  for line in fasta.splitlines():
     if line.startswith('>'):
-      if upper:
-        sequence = sequence.upper()
       if sequence:
-        sequences.append({'name':seq_name, 'seq':sequence})
+        sequences.append(sequence.upper())
       sequence = ''
-      seq_name = line.rstrip('\r\n')[1:]
       continue
     sequence += line.strip()
-  if upper:
-    sequence = sequence.upper()
   if sequence:
-    sequences.append({'name':seq_name, 'seq':sequence})
+    sequences.append(sequence.upper())
   return sequences
 
 
