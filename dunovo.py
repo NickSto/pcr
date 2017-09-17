@@ -281,7 +281,13 @@ def delegate(workers, stats, *args):
   # Receive results from the last duplex the worker processed, if any.
   dcs_str, sscs_strs, duplex_mate, run_stats = None, None, None, {}
   if stats['duplexes'] >= len(workers):
-    dcs_str, sscs_strs, duplex_mate, run_stats = worker['parent_pipe'].recv()
+    returned_data = worker['parent_pipe'].recv()
+    if returned_data is None:
+      logging.warning('Worker {} died.'.format(worker['process'].name))
+      worker = open_worker()
+      workers[worker_i] = worker
+    else:
+      dcs_str, sscs_strs, duplex_mate, run_stats = returned_data
   stats['duplexes'] += 1
   # Send in a new duplex to the worker.
   worker['parent_pipe'].send(args)
@@ -299,8 +305,9 @@ def worker_function(child_pipe):
       break
     try:
       child_pipe.send(process_duplex(*args))
-    except Exception:
-      child_pipe.send((None, None))
+    except Exception as error:
+      logging.critical('{}: {}'.format(type(error).__name__, error))
+      child_pipe.send(None)
       raise
 
 
@@ -346,9 +353,9 @@ def make_sscs(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
   sscss = []
   duplex_mate = None
   for (order, mate), family in duplex.items():
-    logging.info('\t{0}.{1}:'.format(order, mate))
-    for read in family:
-      logging.info('\t\t{name}\t{seq}'.format(**read))
+    # logging.info('\t{0}.{1}:'.format(order, mate))
+    # for read in family:
+    #   logging.info('\t\t{name}\t{seq}'.format(**read))
     nreads = len(family)
     if nreads < min_reads:
       continue
