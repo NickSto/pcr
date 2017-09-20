@@ -202,13 +202,17 @@ def open_workers(num_workers):
 
 def open_worker():
   parent_pipe, child_pipe = multiprocessing.Pipe()
-  process = multiprocessing.Process(target=worker_function, args=(child_pipe,))
+  parent_epipe, child_epipe = multiprocessing.Pipe()
+  process = multiprocessing.Process(target=worker_function, args=(child_pipe, child_epipe))
   process.start()
-  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe}
+  name = process.name.replace('Process', 'Worker')
+  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe,
+            'name':name, 'parent_epipe':parent_epipe, 'child_epipe':child_epipe}
+  logging.info('Opened a new worker process "{}".'.format(name))
   return worker
 
 
-def worker_function(child_pipe):
+def worker_function(child_pipe, child_epipe):
   while True:
     args = child_pipe.recv()
     if args is None:
@@ -216,7 +220,7 @@ def worker_function(child_pipe):
     try:
       child_pipe.send(process_duplex(*args))
     except Exception as error:
-      logging.critical('{}: {}'.format(type(error).__name__, error))
+      child_epipe.send(error)
       child_pipe.send(None)
       raise
 
@@ -229,7 +233,10 @@ def delegate(workers, stats, duplex, barcode):
   if stats['duplexes'] >= len(workers):
     returned_data = worker['parent_pipe'].recv()
     if returned_data is None:
-      logging.warning('Worker {} died.'.format(worker['process'].name))
+      if worker['parent_epipe'].poll(1):
+        error = worker['parent_epipe'].recv()
+        logging.warning('{} threw an {}: {}'.format(worker['name'], type(error).__name__, error))
+      logging.warning('{} died. Replacing it with a new one..'.format(worker['name']))
       worker = open_worker()
       workers[worker_i] = worker
     else:
