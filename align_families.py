@@ -28,9 +28,6 @@ REQUIRED_COMMANDS = ['mafft']
 USAGE = '$ %(prog)s [options] families.tsv > families.msa.tsv'
 DESCRIPTION = """Read in sorted FASTQ data and do multiple sequence alignments of each family."""
 
-METHOD = os.getenv('METHOD', 'mafft')
-# print METHOD
-
 def make_argparser():
 
   wrapper = simplewrap.Wrapper()
@@ -51,6 +48,8 @@ def make_argparser():
               '6. read 2 name\n'
               '7. read 2 sequence\n'
               '8. read 2 quality scores'))
+  parser.add_argument('-a', '--aligner', choices=('mafft', 'kalign'), default='mafft',
+    help=wrap('The multiple sequence aligner to use.'))
   parser.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Must be at least 1. Default: %(default)s.'))
   parser.add_argument('--phone-home', action='store_true',
@@ -100,7 +99,7 @@ def main(argv):
     fail('Error: Missing commands: "'+'", "'.join(missing_commands)+'".')
 
   # Open all the worker processes.
-  workers = open_workers(args.processes)
+  workers = open_workers(args.processes, args.aligner)
 
   # Main loop.
   """This processes whole duplexes (pairs of strands) at a time for a future option to align the
@@ -191,34 +190,34 @@ def main(argv):
                    test=args.test, fail='warn')
 
 
-def open_workers(num_workers):
+def open_workers(num_workers, aligner):
   """Open the required number of worker processes."""
   workers = []
   for i in range(num_workers):
-    worker = open_worker()
+    worker = open_worker(aligner)
     workers.append(worker)
   return workers
 
 
-def open_worker():
+def open_worker(aligner):
   parent_pipe, child_pipe = multiprocessing.Pipe()
   parent_epipe, child_epipe = multiprocessing.Pipe()
-  process = multiprocessing.Process(target=worker_function, args=(child_pipe, child_epipe))
+  process = multiprocessing.Process(target=worker_function, args=(child_pipe, child_epipe, aligner))
   process.start()
   name = process.name.replace('Process', 'Worker')
-  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe,
-            'name':name, 'parent_epipe':parent_epipe, 'child_epipe':child_epipe}
+  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe, 'name':name,
+            'aligner':aligner, 'parent_epipe':parent_epipe, 'child_epipe':child_epipe}
   logging.info('Opened a new worker process "{}".'.format(name))
   return worker
 
 
-def worker_function(child_pipe, child_epipe):
+def worker_function(child_pipe, child_epipe, aligner):
   while True:
     args = child_pipe.recv()
     if args is None:
       break
     try:
-      child_pipe.send(process_duplex(*args))
+      child_pipe.send(process_duplex(*args, aligner=aligner))
     except Exception as error:
       child_epipe.send(error)
       child_pipe.send(None)
@@ -237,7 +236,7 @@ def delegate(workers, stats, duplex, barcode):
         error = worker['parent_epipe'].recv()
         logging.warning('{} threw an {}: {}'.format(worker['name'], type(error).__name__, error))
       logging.warning('{} died. Replacing it with a new one..'.format(worker['name']))
-      worker = open_worker()
+      worker = open_worker(worker['aligner'])
       workers[worker_i] = worker
     else:
       output, run_stats = returned_data
@@ -248,7 +247,7 @@ def delegate(workers, stats, duplex, barcode):
   return output, run_stats, worker_i
 
 
-def process_duplex(duplex, barcode):
+def process_duplex(duplex, barcode, aligner='mafft'):
   output = ''
   run_stats = {'time':0, 'runs':0, 'aligned_pairs':0, 'failures':0}
   orders = duplex.keys()
@@ -267,7 +266,7 @@ def process_duplex(duplex, barcode):
     family = duplex[order]
     start = time.time()
     try:
-      alignment = align_family(family, mate)
+      alignment = align_family(family, mate, aligner=aligner)
     except AssertionError as error:
       logging.critical('AssertionError on family {}, order {}, mate {}:\n{}.'
                        .format(barcode, order, mate, error))
@@ -292,7 +291,7 @@ def process_duplex(duplex, barcode):
   return output, run_stats
 
 
-def align_family(family, mate):
+def align_family(family, mate, aligner='mafft'):
   """Do a multiple sequence alignment of the reads in a family and their quality scores."""
   mate = str(mate)
   assert mate == '1' or mate == '2'
@@ -303,7 +302,7 @@ def align_family(family, mate):
     aligned_seqs = [family[0]['seq'+mate]]
   else:
     # Do the multiple sequence alignment.
-    aligned_seqs = make_msa(family, mate, method=METHOD)
+    aligned_seqs = make_msa(family, mate, aligner=aligner)
   # Transfer the alignment to the quality scores.
   ## Get a list of all quality scores in the family for this mate.
   quals_raw = [pair['qual'+mate] for pair in family]
@@ -315,14 +314,15 @@ def align_family(family, mate):
   return alignment
 
 
-def make_msa(family, mate, method='mafft'):
-  if method == 'mafft':
+def make_msa(family, mate, aligner='mafft'):
+  if aligner == 'mafft':
     return make_msa_mafft(family, mate)
-  elif method == 'kalign':
+  elif aligner == 'kalign':
     return make_msa_kalign(family, mate)
 
 
 def make_msa_kalign(family, mate):
+  logging.info('Aligning with kalign.')
   import kalign
   seqs = [pair['seq'+mate] for pair in family]
   return kalign.align(seqs)
@@ -331,6 +331,7 @@ def make_msa_kalign(family, mate):
 def make_msa_mafft(family, mate):
   """Perform a multiple sequence alignment on a set of sequences and parse the result.
   Uses MAFFT."""
+  logging.info('Aligning with mafft.')
   #TODO: Replace with tempfile.mkstemp()?
   with tempfile.NamedTemporaryFile('w', delete=False, prefix='align.msa.') as family_file:
     for pair in family:
