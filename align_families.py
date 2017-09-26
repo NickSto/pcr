@@ -99,7 +99,7 @@ def main(argv):
     fail('Error: Missing commands: "'+'", "'.join(missing_commands)+'".')
 
   # Open a pool of worker processes.
-  pool = parallel.StreamingPool(args.processes, process_duplex, [args.aligner])
+  pool = parallel.RotatingPool(args.processes, process_duplex, [args.aligner])
 
   # Main loop.
   """This processes whole duplexes (pairs of strands) at a time for a future option to align the

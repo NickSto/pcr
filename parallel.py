@@ -1,4 +1,3 @@
-import sys
 import time
 import logging
 import traceback
@@ -19,12 +18,6 @@ LOG_LEVELS = {
   'critcal': logging.CRITICAL,
 }
 
-# logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format='%(message)s')
-
-
-def set_log_level(level):
-  logging.getLogger().setLevel(level)
-
 
 LogEvent = collections.namedtuple('LogEvent', ('type', 'data1', 'data2'))
 
@@ -37,7 +30,7 @@ class WorkerDiedError(Exception):
   pass
 
 
-class StreamingPool(list):
+class RotatingPool(list):
 
   def __init__(self, num_workers, function, static_args=None, pause=0.1):
     """Open a pool of worker processes.
