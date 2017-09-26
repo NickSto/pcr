@@ -5,8 +5,8 @@ import time
 import logging
 import argparse
 import collections
-import multiprocessing
 import consensus
+import parallel
 import swalign
 import shims
 # There can be problems with the submodules, but none are essential.
@@ -154,8 +154,10 @@ def main(argv):
     'sscs': (None, args.sscs1, args.sscs2),
   }
 
-  # Open all the worker processes.
-  workers = open_workers(args.processes)
+  # Open a pool of worker processes.
+  static_args = [args.incl_sscs, args.min_reads, args.cons_thres, args.min_cons_reads, qual_thres]
+  pool = parallel.RotatingPool(args.processes, process_duplex, static_args=static_args,
+                               give_logger=True)
 
   try:
 
@@ -189,9 +191,8 @@ def main(argv):
         # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
         if barcode is not None and (new_barcode or not (new_order and new_mate)):
           assert len(duplex) <= 2, duplex.keys()
-          results = delegate(workers, stats, duplex, barcode, args.incl_sscs, args.min_reads,
-                             args.cons_thres, args.min_cons_reads, qual_thres)
-          process_results(filehandles, stats, *results[1:])
+          result = pool.compute(duplex, barcode)
+          process_results(result, filehandles, stats)
           duplex = collections.OrderedDict()
         barcode = this_barcode
         order = this_order
@@ -203,27 +204,19 @@ def main(argv):
     # Process the last family.
     duplex[(order, mate)] = family
     assert len(duplex) <= 2, duplex.keys()
-    results = delegate(workers, stats, duplex, barcode, args.incl_sscs, args.min_reads,
-                       args.cons_thres, args.min_cons_reads, qual_thres)
-    process_results(filehandles, stats, *results[1:])
-    current_worker_i = results[0]
+    result = pool.compute(duplex, barcode)
+    process_results(result, filehandles, stats)
 
     # Do one last loop through the workers, reading the remaining results and stopping them.
     # Start at the worker after the last one processed by the previous loop.
-    start = current_worker_i + 1
-    for i in range(len(workers)):
-      worker_i = (start + i) % args.processes
-      worker = workers[worker_i]
-      results = worker['parent_pipe'].recv()
-      process_results(filehandles, stats, *results)
+    logging.info('Flushing remaining results from worker processes..')
+    for result in pool.flush():
+      process_results(result, filehandles, stats)
 
-  except Exception:
-    raise
   finally:
     # If the root process encounters an exception and doesn't tell the workers to stop, it will
     # hang forever.
-    for worker in workers:
-      worker['parent_pipe'].send(None)
+    pool.stop()
     # Close all open filehandles.
     if args.infile is not sys.stdin:
       args.infile.close()
@@ -250,74 +243,12 @@ def main(argv):
                    test=args.test, fail='warn')
 
 
-def tone_down_logger():
-  """Change the logging level names from all-caps to capitalized lowercase.
-  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
-  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
-    level_name = logging.getLevelName(level)
-    logging.addLevelName(level, level_name.capitalize())
-
-
-def open_workers(num_workers):
-  """Open the required number of worker processes."""
-  workers = []
-  for i in range(num_workers):
-    worker = open_worker()
-    workers.append(worker)
-  return workers
-
-
-def open_worker():
-  parent_pipe, child_pipe = multiprocessing.Pipe()
-  process = multiprocessing.Process(target=worker_function, args=(child_pipe,))
-  process.start()
-  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe}
-  return worker
-
-
-def delegate(workers, stats, *args):
-  worker_i = stats['duplexes'] % len(workers)
-  worker = workers[worker_i]
-  # Receive results from the last duplex the worker processed, if any.
-  dcs_str, sscs_strs, duplex_mate, run_stats = None, None, None, {}
-  if stats['duplexes'] >= len(workers):
-    returned_data = worker['parent_pipe'].recv()
-    if returned_data is None:
-      logging.warning('Worker {} died.'.format(worker['process'].name))
-      worker = open_worker()
-      workers[worker_i] = worker
-    else:
-      dcs_str, sscs_strs, duplex_mate, run_stats = returned_data
-  stats['duplexes'] += 1
-  # Send in a new duplex to the worker.
-  worker['parent_pipe'].send(args)
-  return worker_i, dcs_str, sscs_strs, duplex_mate, run_stats
-
-
-#################### Worker processes ####################
-
-
-def worker_function(child_pipe):
-  """Worker loop: Receive data from parent, process it, and send back results."""
-  while True:
-    args = child_pipe.recv()
-    if args is None:
-      break
-    try:
-      child_pipe.send(process_duplex(*args))
-    except Exception as error:
-      logging.critical('{}: {}'.format(type(error).__name__, error))
-      child_pipe.send(None)
-      raise
-
-
 def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5, min_cons_reads=0,
-                   qual_thres=' '):
+                   qual_thres=' ', logger=logging):
   """Create one duplex consensus sequence from a pair of single-stranded families."""
   # The code in the main loop ensures that "duplex" contains only reads belonging to one final
   # duplex consensus read: ab.1 and ba.2 reads OR ab.2 and ba.1 reads. (Of course, one half might
   # be missing).
-  logger = get_multi_logger()
   logger.info('Starting duplex {}'.format(barcode))
   start = time.time()
   # Construct consensus sequences.
@@ -393,9 +324,10 @@ def format_consensus(seq, barcode, reads_per_strand):
   return '>{bar} {reads}\n{seq}\n'.format(bar=barcode, reads=reads_str, seq=seq)
 
 
-def process_results(filehandles, stats, dcs_str, sscs_strs, duplex_mate, run_stats):
-  if dcs_str is None and sscs_strs is None:
+def process_results(result, filehandles, stats):
+  if result is parallel.Sentinel:
     return
+  dcs_str, sscs_strs, duplex_mate, run_stats = result
   for key, value in run_stats.items():
     stats[key] += value
   if dcs_str and filehandles['dcs'][duplex_mate]:
@@ -405,19 +337,12 @@ def process_results(filehandles, stats, dcs_str, sscs_strs, duplex_mate, run_sta
       filehandles['sscs'][mate].write(sscs_strs[mate])
 
 
-def get_multi_logger():
-  # Get config info from root logger.
-  root_logger = logging.getLogger()
-  loglevel = root_logger.getEffectiveLevel()
-  stream = root_logger.handlers[0].stream
-  # Get a multiprocessing logger and configure it the same as the root logger.
-  logger = multiprocessing.get_logger()
-  logger.setLevel(loglevel)
-  if len(logger.handlers) > 0:
-    logger.handlers[0].stream = stream
-  else:
-    logger.addHandler(logging.StreamHandler(stream=stream))
-  return logger
+def tone_down_logger():
+  """Change the logging level names from all-caps to capitalized lowercase.
+  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
+  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
+    level_name = logging.getLevelName(level)
+    logging.addLevelName(level, level_name.capitalize())
 
 
 def fail(message):
