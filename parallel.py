@@ -61,8 +61,9 @@ class StreamingPool(list):
     """Convenience method to spawn and start a new worker with the Pool's parameters."""
     worker = Worker(self.function, static_args=self.static_args, pause=self.pause)
     worker.start()
-    while worker.state != 'started':
+    while not worker.is_alive():
       time.sleep(self.pause)
+    worker.state = 'idle'
     return worker
 
   @property
@@ -78,15 +79,16 @@ class StreamingPool(list):
     worker = self[current_worker_index]
     worker.log_events()
     try:
-      results = worker.get_results()
+      result = worker.get_result()
     except WorkerDiedError:
       logging.warning('{} died. Replacing it with a new one..'.format(worker.name))
       worker = self.make_worker()
       self[current_worker_index] = worker
-      results = []
+      result = Sentinel
     worker.parent_data_pipe.send(input_data)
+    worker.state = 'working'
     self.jobs_submitted += 1
-    return results
+    return result
 
   def flush(self):
     """Get the results of all pending computations.
@@ -98,8 +100,8 @@ class StreamingPool(list):
       worker = self[current_worker_index]
       worker.log_events()
       try:
-        results = worker.get_results()
-        for result in results:
+        result = worker.get_result()
+        if result is not Sentinel:
           yield result
       except WorkerDiedError:
         logging.warning('{} died.'.format(worker.name))
@@ -120,7 +122,6 @@ class Worker(multiprocessing.Process):
   def __init__(self, function, static_args=None, pause=0.1, *args, **kwargs):
     multiprocessing.Process.__init__(self, target=self.worker_loop, *args, **kwargs)
     self.parent_data_pipe, self.child_data_pipe = multiprocessing.Pipe()
-    self.parent_state_pipe, self.child_state_pipe = multiprocessing.Pipe()
     self.parent_log_pipe, self.child_log_pipe = multiprocessing.Pipe()
     self.function = function
     self.pause = pause
@@ -128,23 +129,17 @@ class Worker(multiprocessing.Process):
       self.static_args = []
     else:
       self.static_args = static_args
-    self._state = 'initialized'
+    self.state = 'initialized'
 
-  @property
-  def state(self):
-    while self.parent_state_pipe.poll():
-      self._state = self.parent_state_pipe.recv()
-    return self._state
-
-  def get_results(self):
+  def get_result(self):
     if not self.is_alive():
       raise WorkerDiedError
-    while self.state == 'thinking':
-      time.sleep(self.pause)
-      if not self.is_alive():
-        raise WorkerDiedError
-    while self.parent_data_pipe.poll():
-      yield self.parent_data_pipe.recv()
+    if self.state == 'working':
+      result = self.parent_data_pipe.recv()
+      self.state = 'idle'
+      return result
+    else:
+      return Sentinel
 
   def log_events(self):
     while self.parent_log_pipe.poll():
@@ -152,6 +147,7 @@ class Worker(multiprocessing.Process):
       if event.type == 'exception':
         error = event.data1
         logging.warning('{} threw a {}: {}'.format(self.name, type(error).__name__, error))
+        self.state = 'error'
       elif event.type == 'log':
         level = event.data1
         message = event.data2
@@ -162,19 +158,14 @@ class Worker(multiprocessing.Process):
     try:
       multiprocessing.Process.run(self)
     except Exception as error:
-      self.child_state_pipe.send('error')
       trace = traceback.format_exc()
       self.child_log_pipe.send(LogEvent('exception', error, trace))
       raise
 
   def worker_loop(self):
-    self.child_state_pipe.send('started')
     input_data = self.child_data_pipe.recv()
     while input_data is not Sentinel:
-      self.child_state_pipe.send('thinking')
       args = list(input_data) + self.static_args
       result = self.function(*args)
       self.child_data_pipe.send(result)
-      self.child_state_pipe.send('listening')
       input_data = self.child_data_pipe.recv()
-    self.child_state_pipe.send('stopped')

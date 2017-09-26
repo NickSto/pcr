@@ -141,8 +141,9 @@ def main(argv):
       if this_barcode != barcode:
         # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
         #               '/'.join([str(len(duplex[o])) for o in duplex])))
-        results = pool.compute(duplex, barcode)
-        process_results(results, stats)
+        logging.info(pool.states)
+        result = pool.compute(duplex, barcode)
+        process_results(result, stats)
         duplex = collections.OrderedDict()
       barcode = this_barcode
       order = this_order
@@ -154,14 +155,14 @@ def main(argv):
   duplex[order] = family
   # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
   #               '/'.join([str(len(duplex[o])) for o in duplex])))
-  results = pool.compute(duplex, barcode)
-  process_results(results, stats)
+  logging.info(pool.states)
+  result = pool.compute(duplex, barcode)
+  process_results(result, stats)
 
   # Process all remaining families in the queue.
-  logging.info('flushing..')
-  results = pool.flush()
-  process_results(results, stats)
-  logging.info(pool.states)
+  logging.info('Flushing..')
+  for result in pool.flush():
+    process_results(result, stats)
   pool.stop()
 
   if args.infile is not sys.stdin:
@@ -317,15 +318,16 @@ def format_msa(align, barcode, order, mate, outfile=sys.stdout):
   return output
 
 
-def process_results(results, stats):
+def process_results(result, stats):
   """Process the outcome of a duplex run.
   Print the aligned output and sum the stats from the run with the running totals."""
-  for result in results:
-    output, run_stats = result
-    for key, value in run_stats.items():
-      stats[key] += value
-    if output:
-      sys.stdout.write(output)
+  if result is parallel.Sentinel:
+    return
+  output, run_stats = result
+  for key, value in run_stats.items():
+    stats[key] += value
+  if output:
+    sys.stdout.write(output)
 
 
 def tone_down_logger():
