@@ -100,7 +100,6 @@ class StreamingPool(list):
       try:
         results = worker.get_results()
         for result in results:
-          logging.info('Unpacked result: '+type(result).__name__)
           yield result
       except WorkerDiedError:
         logging.warning('{} died.'.format(worker.name))
@@ -174,18 +173,8 @@ class Worker(multiprocessing.Process):
     while input_data is not Sentinel:
       self.child_state_pipe.send('thinking')
       args = list(input_data) + self.static_args
-      logging.info('Starting on '+', '.join(get_family_strs(*input_data)))
       result = self.function(*args)
-      logging.info('Finished    '+', '.join(get_family_strs(*input_data)))
       self.child_data_pipe.send(result)
       self.child_state_pipe.send('listening')
       input_data = self.child_data_pipe.recv()
     self.child_state_pipe.send('stopped')
-
-def get_family_strs(duplex, barcode):
-  if barcode is None:
-    yield 'None'
-    return
-  for order in duplex.keys():
-    for mate in range(1, 3):
-      yield '{0}.{1}.{2}'.format(barcode, order, mate)
