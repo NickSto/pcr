@@ -127,46 +127,52 @@ def main(argv):
   e.g.:
   seq = duplex[order][pair_num]['seq1']
   """
-  stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
-  duplex = collections.OrderedDict()
-  family = []
-  barcode = None
-  order = None
-  for line in args.infile:
-    fields = line.rstrip('\r\n').split('\t')
-    if len(fields) != 8:
-      continue
-    (this_barcode, this_order, name1, seq1, qual1, name2, seq2, qual2) = fields
-    # If the barcode or order has changed, we're in a new family.
-    # Process the reads we've previously gathered as one family and start a new family.
-    if this_barcode != barcode or this_order != order:
-      duplex[order] = family
-      # If the barcode is different, we're at the end of the whole duplex. Process the it and start
-      # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
-      if this_barcode != barcode:
-        # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
-        #               '/'.join([str(len(duplex[o])) for o in duplex])))
-        result = pool.compute(duplex, barcode)
-        process_results(result, stats)
-        duplex = collections.OrderedDict()
-      barcode = this_barcode
-      order = this_order
-      family = []
-    pair = {'name1': name1, 'seq1':seq1, 'qual1':qual1, 'name2':name2, 'seq2':seq2, 'qual2':qual2}
-    family.append(pair)
-    stats['pairs'] += 1
-  # Process the last family.
-  duplex[order] = family
-  # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
-  #               '/'.join([str(len(duplex[o])) for o in duplex])))
-  result = pool.compute(duplex, barcode)
-  process_results(result, stats)
+  try:
 
-  # Process all remaining families in the queue.
-  logging.info('Flushing..')
-  for result in pool.flush():
+    stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
+    duplex = collections.OrderedDict()
+    family = []
+    barcode = None
+    order = None
+    for line in args.infile:
+      fields = line.rstrip('\r\n').split('\t')
+      if len(fields) != 8:
+        continue
+      (this_barcode, this_order, name1, seq1, qual1, name2, seq2, qual2) = fields
+      # If the barcode or order has changed, we're in a new family.
+      # Process the reads we've previously gathered as one family and start a new family.
+      if this_barcode != barcode or this_order != order:
+        duplex[order] = family
+        # If the barcode is different, we're at the end of the whole duplex. Process the it and start
+        # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
+        if this_barcode != barcode:
+          # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
+          #               '/'.join([str(len(duplex[o])) for o in duplex])))
+          result = pool.compute(duplex, barcode)
+          process_results(result, stats)
+          duplex = collections.OrderedDict()
+        barcode = this_barcode
+        order = this_order
+        family = []
+      pair = {'name1': name1, 'seq1':seq1, 'qual1':qual1, 'name2':name2, 'seq2':seq2, 'qual2':qual2}
+      family.append(pair)
+      stats['pairs'] += 1
+    # Process the last family.
+    duplex[order] = family
+    # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
+    #               '/'.join([str(len(duplex[o])) for o in duplex])))
+    result = pool.compute(duplex, barcode)
     process_results(result, stats)
-  pool.stop()
+
+    # Process all remaining families in the queue.
+    logging.info('Flushing remaining results from worker processes..')
+    for result in pool.flush():
+      process_results(result, stats)
+
+  finally:
+    # If an exception occurs in the parent without stopping the child processes, this will hang.
+    # Make sure to kill the children in all cases.
+    pool.stop()
 
   if args.infile is not sys.stdin:
     args.infile.close()
