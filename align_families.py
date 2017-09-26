@@ -8,9 +8,9 @@ import tempfile
 import argparse
 import subprocess
 import collections
-import multiprocessing
 import distutils.spawn
 import seqtools
+import parallel
 import shims
 # There can be problems with the submodules, but none are essential.
 # Try to load these modules, but if there's a problem, load a harmless dummy and continue.
@@ -98,8 +98,8 @@ def main(argv):
   if missing_commands:
     fail('Error: Missing commands: "'+'", "'.join(missing_commands)+'".')
 
-  # Open all the worker processes.
-  workers = open_workers(args.processes, args.aligner)
+  # Open a pool of worker processes.
+  pool = parallel.StreamingPool(args.processes, process_duplex, [args.aligner])
 
   # Main loop.
   """This processes whole duplexes (pairs of strands) at a time for a future option to align the
@@ -123,7 +123,6 @@ def main(argv):
   seq = duplex[order][pair_num]['seq1']
   """
   stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
-  current_worker_i = 0
   duplex = collections.OrderedDict()
   family = []
   barcode = None
@@ -142,8 +141,8 @@ def main(argv):
       if this_barcode != barcode:
         # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
         #               '/'.join([str(len(duplex[o])) for o in duplex])))
-        output, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode)
-        process_results(output, run_stats, stats)
+        results = pool.compute(duplex, barcode)
+        process_results(results, stats)
         duplex = collections.OrderedDict()
       barcode = this_barcode
       order = this_order
@@ -155,18 +154,15 @@ def main(argv):
   duplex[order] = family
   # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
   #               '/'.join([str(len(duplex[o])) for o in duplex])))
-  output, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode)
-  process_results(output, run_stats, stats)
+  results = pool.compute(duplex, barcode)
+  process_results(results, stats)
 
-  # Do one last loop through the workers, reading the remaining results and stopping them.
-  # Start at the worker after the last one processed by the previous loop.
-  start = current_worker_i + 1
-  for i in range(len(workers)):
-    worker_i = (start + i) % args.processes
-    worker = workers[worker_i]
-    output, run_stats = worker['parent_pipe'].recv()
-    process_results(output, run_stats, stats)
-    worker['parent_pipe'].send(None)
+  # Process all remaining families in the queue.
+  logging.info('flushing..')
+  results = pool.flush()
+  process_results(results, stats)
+  logging.info(pool.states)
+  pool.stop()
 
   if args.infile is not sys.stdin:
     args.infile.close()
@@ -175,6 +171,7 @@ def main(argv):
   run_time = int(end_time - start_time)
 
   # Final stats on the run.
+  stats['duplexes'] = pool.jobs_submitted
   logging.error('Processed {pairs} read pairs in {duplexes} duplexes, with {failures} alignment '
                 'failures.'.format(**stats))
   if stats['aligned_pairs'] > 0 and stats['runs'] > 0:
@@ -188,63 +185,6 @@ def main(argv):
     del stats['time']
     phone.send_end(__file__, version.get_version(), run_id, run_time, stats, platform=args.platform,
                    test=args.test, fail='warn')
-
-
-def open_workers(num_workers, aligner):
-  """Open the required number of worker processes."""
-  workers = []
-  for i in range(num_workers):
-    worker = open_worker(aligner)
-    workers.append(worker)
-  return workers
-
-
-def open_worker(aligner):
-  parent_pipe, child_pipe = multiprocessing.Pipe()
-  parent_epipe, child_epipe = multiprocessing.Pipe()
-  process = multiprocessing.Process(target=worker_function, args=(child_pipe, child_epipe, aligner))
-  process.start()
-  name = process.name.replace('Process', 'Worker')
-  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe, 'name':name,
-            'aligner':aligner, 'parent_epipe':parent_epipe, 'child_epipe':child_epipe}
-  logging.info('Opened a new worker process "{}".'.format(name))
-  return worker
-
-
-def worker_function(child_pipe, child_epipe, aligner):
-  while True:
-    args = child_pipe.recv()
-    if args is None:
-      break
-    try:
-      child_pipe.send(process_duplex(*args, aligner=aligner))
-    except Exception as error:
-      child_epipe.send(error)
-      child_pipe.send(None)
-      raise
-
-
-def delegate(workers, stats, duplex, barcode):
-  worker_i = stats['duplexes'] % len(workers)
-  worker = workers[worker_i]
-  # Receive results from the last duplex the worker processed, if any.
-  output, run_stats = '', {}
-  if stats['duplexes'] >= len(workers):
-    returned_data = worker['parent_pipe'].recv()
-    if returned_data is None:
-      if worker['parent_epipe'].poll(1):
-        error = worker['parent_epipe'].recv()
-        logging.warning('{} threw an {}: {}'.format(worker['name'], type(error).__name__, error))
-      logging.warning('{} died. Replacing it with a new one..'.format(worker['name']))
-      worker = open_worker(worker['aligner'])
-      workers[worker_i] = worker
-    else:
-      output, run_stats = returned_data
-  stats['duplexes'] += 1
-  # Send in a new duplex to the worker.
-  args = (duplex, barcode)
-  worker['parent_pipe'].send(args)
-  return output, run_stats, worker_i
 
 
 def process_duplex(duplex, barcode, aligner='mafft'):
@@ -377,13 +317,15 @@ def format_msa(align, barcode, order, mate, outfile=sys.stdout):
   return output
 
 
-def process_results(output, run_stats, stats):
+def process_results(results, stats):
   """Process the outcome of a duplex run.
   Print the aligned output and sum the stats from the run with the running totals."""
-  for key, value in run_stats.items():
-    stats[key] += value
-  if output:
-    sys.stdout.write(output)
+  for result in results:
+    output, run_stats = result
+    for key, value in run_stats.items():
+      stats[key] += value
+    if output:
+      sys.stdout.write(output)
 
 
 def tone_down_logger():
