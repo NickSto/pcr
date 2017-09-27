@@ -15,19 +15,35 @@ LOG_LEVELS = {
 
 
 class RotatingPool(list):
+  """A pool of workers which will execute one function on a series of input data and directly return
+  the result.
+  This is a conceptually simplified variation on multiprocessing.Pool. Instead of interacting with
+  the workers asynchronously with callbacks, this pool will directly return the result of the
+  function. It won't give it to you right after you hand it the input data, but a few calls later.
+  This is useful for times when you want to process a stream of data in parallel, but want the
+  results back in the same loop, and don't care to match inputs to outputs. That can be done, since
+  this keeps outputs in the same order as the inputs, but it takes a little work to sync them back
+  up.
+  As the name suggests, this is implemented with a rotating pool of workers. It creates N workers,
+  hands the first input to the first one, then the next, and so on. At the end, it loops back
+  to the start and starts getting a result from each worker before handing it new input.
+  So on the N+1th call to .compute(), it'll return the result from the 1st input.
+  If you haven't called .compute() N+1 times yet, it'll return parallel.Sentinel to let you know
+  it's not actually a real result.
+  This is actually a subclass of list, where each member is a Worker."""
 
-  def __init__(self, num_workers, function, static_args=None, pause=0.1, give_logger=False):
+  def __init__(self, num_workers, function, static_args=None, give_logger=False):
     """Open a pool of worker processes.
     num_workers is the number of worker processes to create.
     function is the function to execute on each set of input data.
     static_args is a list of arguments to always give to the function. These will go at the end of
     the arguments (appended to the input data arguments).
-    If give_logger is true, the function will be given an object as the last static argument which
-    it can use to send messages which will be logged. The object implements methods like log() and
-    warning(), so it can often be used as a drop-in replacement for a logging.Logger."""
+    If give_logger is true, the function will be given a parallel.PipeLogger object as the last
+    static argument which it can use to send messages which will be logged. The object implements
+    methods like log() and warning(), so it can often be used as a drop-in replacement for a
+    logging.Logger."""
     list.__init__(self)
     self.function = function
-    self.pause = pause
     self.give_logger = give_logger
     self.jobs_submitted = 0
     if static_args is None:
@@ -38,12 +54,11 @@ class RotatingPool(list):
       self.append(self.make_worker())
 
   def make_worker(self):
-    """Convenience method to spawn and start a new worker with the Pool's parameters."""
-    worker = Worker(self.function, static_args=self.static_args, pause=self.pause,
-                    give_logger=self.give_logger)
+    """Convenience method to spawn and start a new worker with the pool's parameters."""
+    worker = Worker(self.function, static_args=self.static_args, give_logger=self.give_logger)
     worker.start()
     while not worker.is_alive():
-      time.sleep(self.pause)
+      time.sleep(0.01)
     worker.state = 'idle'
     return worker
 
@@ -53,8 +68,9 @@ class RotatingPool(list):
 
   def compute(self, *input_data):
     """Process the input data by handing it as arguments to the pool's function.
-    Returns a generator where each element is the result of a previous computation,
-    or None if none has finished yet.
+    Returns the result of a previous computation, or parallel.Sentinel (the class, not an instance
+    of it) if none has finished yet.
+    The computation it will return on the nth call will be from the n-num_workers input.
     If the current worker is still computing, this will block until it's done."""
     current_worker_index = self.jobs_submitted % len(self)
     worker = self[current_worker_index]
@@ -100,12 +116,11 @@ class RotatingPool(list):
 class Worker(multiprocessing.Process):
 
   ##### Parent methods #####
-  def __init__(self, function, static_args=None, pause=0.1, give_logger=False, *args, **kwargs):
+  def __init__(self, function, static_args=None, give_logger=False, *args, **kwargs):
     multiprocessing.Process.__init__(self, target=self.worker_loop, *args, **kwargs)
     self.parent_data_pipe, self.child_data_pipe = multiprocessing.Pipe()
     self.parent_log_pipe, self.child_log_pipe = multiprocessing.Pipe()
     self.function = function
-    self.pause = pause
     if static_args is None:
       self.static_args = []
     else:
