@@ -14,49 +14,6 @@ LOG_LEVELS = {
 }
 
 
-ExceptionEvent = collections.namedtuple('ExceptionEvent', ('type', 'exception', 'traceback'))
-LogEvent = collections.namedtuple('LogEvent', ('type', 'level', 'message', 'args', 'kwargs'))
-
-
-class PipeLogger(object):
-  """A drop-in replacement for a logging.Logger which will send logs back to the root process.
-  This implements only the methods for actually logging a message: log, debug, info, warning,
-  error, and critical.
-  Instead of sending the message through the logging module, this will send the message through
-  the log pipe back to the parent process which will then log it using the logging module.
-  The message will be prefixed with the worker's name."""
-
-  def __init__(self, child_log_pipe):
-    self.child_log_pipe = child_log_pipe
-
-  def log(self, level, message, *args, **kwargs):
-    event = LogEvent(type='log', level=level, message=message, args=args, kwargs=kwargs)
-    self.child_log_pipe.send(event)
-
-  def debug(self, message, *args, **kwargs):
-    self.log(logging.DEBUG, message, *args, **kwargs)
-
-  def info(self, message, *args, **kwargs):
-    self.log(logging.INFO, message, *args, **kwargs)
-
-  def warning(self, message, *args, **kwargs):
-    self.log(logging.WARNING, message, *args, **kwargs)
-
-  def error(self, message, *args, **kwargs):
-    self.log(logging.ERROR, message, *args, **kwargs)
-
-  def critical(self, message, *args, **kwargs):
-    self.log(logging.CRITICAL, message, *args, **kwargs)
-
-
-class Sentinel(object):
-  pass
-
-
-class WorkerDiedError(Exception):
-  pass
-
-
 class RotatingPool(list):
 
   def __init__(self, num_workers, function, static_args=None, pause=0.1, give_logger=False):
@@ -195,3 +152,46 @@ class Worker(multiprocessing.Process):
       result = self.function(*args)
       self.child_data_pipe.send(result)
       input_data = self.child_data_pipe.recv()
+
+
+class Sentinel(object):
+  pass
+
+
+class WorkerDiedError(Exception):
+  pass
+
+
+ExceptionEvent = collections.namedtuple('ExceptionEvent', ('type', 'exception', 'traceback'))
+LogEvent = collections.namedtuple('LogEvent', ('type', 'level', 'message', 'args', 'kwargs'))
+
+
+class PipeLogger(object):
+  """A drop-in replacement for a logging.Logger which will send logs back to the root process.
+  This implements only the methods for actually logging a message: log, debug, info, warning,
+  error, and critical.
+  Instead of sending the message through the logging module, this will send the message through
+  the log pipe back to the parent process which will then log it using the logging module.
+  The message will be prefixed with the worker's name."""
+
+  def __init__(self, child_log_pipe):
+    self.child_log_pipe = child_log_pipe
+
+  def log(self, level, message, *args, **kwargs):
+    event = LogEvent(type='log', level=level, message=message, args=args, kwargs=kwargs)
+    self.child_log_pipe.send(event)
+
+  def debug(self, message, *args, **kwargs):
+    self.log(logging.DEBUG, message, *args, **kwargs)
+
+  def info(self, message, *args, **kwargs):
+    self.log(logging.INFO, message, *args, **kwargs)
+
+  def warning(self, message, *args, **kwargs):
+    self.log(logging.WARNING, message, *args, **kwargs)
+
+  def error(self, message, *args, **kwargs):
+    self.log(logging.ERROR, message, *args, **kwargs)
+
+  def critical(self, message, *args, **kwargs):
+    self.log(logging.CRITICAL, message, *args, **kwargs)
