@@ -6,11 +6,11 @@ import logging
 import argparse
 import collections
 import consensus
-import parallel
 import swalign
 import shims
 # There can be problems with the submodules, but none are essential.
 # Try to load these modules, but if there's a problem, load a harmless dummy and continue.
+parallel = shims.get_module_or_shim('utillib.parallel')
 simplewrap = shims.get_module_or_shim('utillib.simplewrap')
 version = shims.get_module_or_shim('utillib.version')
 phone = shims.get_module_or_shim('ET.phone')

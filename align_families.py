@@ -10,10 +10,10 @@ import subprocess
 import collections
 import distutils.spawn
 import seqtools
-import parallel
 import shims
 # There can be problems with the submodules, but none are essential.
 # Try to load these modules, but if there's a problem, load a harmless dummy and continue.
+parallel = shims.get_module_or_shim('utillib.parallel')
 simplewrap = shims.get_module_or_shim('utillib.simplewrap')
 version = shims.get_module_or_shim('utillib.version')
 phone = shims.get_module_or_shim('ET.phone')
@@ -102,8 +102,8 @@ def main(argv):
   pool = parallel.RotatingPool(args.processes, process_duplex, static_args=[args.aligner],
                                give_logger=True)
 
-  # Main loop.
-  """This processes whole duplexes (pairs of strands) at a time for a future option to align the
+  """Main loop.
+  This processes whole duplexes (pairs of strands) at a time for a future option to align the
   whole duplex at a time.
   duplex data structure:
   duplex = {
@@ -125,8 +125,7 @@ def main(argv):
     ]
   }
   e.g.:
-  seq = duplex[order][pair_num]['seq1']
-  """
+  seq = duplex[order][pair_num]['seq1']"""
   try:
 
     stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
