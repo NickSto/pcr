@@ -1,4 +1,5 @@
 import sys
+import logging
 import importlib
 """Stub versions of optional submodules which may fail to clone."""
 
@@ -41,6 +42,31 @@ class phone(Shim):
                test=False,
                fail='warn'):
     pass
+
+
+class parallel(Shim):
+  class Sentinel(object):
+    pass
+  class RotatingPool(list):
+    def __init__(self, num_workers, function, static_args=None, give_logger=False):
+      list.__init__(self)
+      self.function = function
+      self.jobs_submitted = 0
+      if static_args is None:
+        self.static_args = []
+      else:
+        self.static_args = list(static_args)
+      if give_logger:
+        self.static_args.append(logging)
+    def compute(self, *input_data):
+      args = list(input_data) + self.static_args
+      self.jobs_submitted += 1
+      return self.function(*args)
+    def flush(self):
+      if False:
+        yield None
+    def stop(self):
+      pass
 
 
 def get_module_or_shim(module_path):
