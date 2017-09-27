@@ -5,17 +5,12 @@ import collections
 import multiprocessing
 
 LOG_LEVELS = {
-  logging.DEBUG: logging.DEBUG,
   'debug': logging.DEBUG,
-  logging.INFO: logging.INFO,
   'info': logging.INFO,
-  logging.WARNING: logging.WARNING,
   'warn': logging.WARN,
   'warning': logging.WARNING,
-  logging.ERROR: logging.ERROR,
   'error': logging.ERROR,
-  logging.CRITICAL: logging.CRITICAL,
-  'critcal': logging.CRITICAL,
+  'critical': logging.CRITICAL,
 }
 
 
@@ -181,7 +176,8 @@ class Worker(multiprocessing.Process):
         self.state = 'error'
       elif event.type == 'log':
         message = '({}) {}'.format(self.name, event.message)
-        logging.log(LOG_LEVELS[event.level], message, *event.args, **event.kwargs)
+        level = LOG_LEVELS.get(event.level, event.level)
+        logging.log(level, message, *event.args, **event.kwargs)
 
   ##### Child methods #####
   def run(self):
