@@ -5,12 +5,12 @@ import time
 import logging
 import argparse
 import collections
+import multiprocessing
 import consensus
 import swalign
 import shims
 # There can be problems with the submodules, but none are essential.
 # Try to load these modules, but if there's a problem, load a harmless dummy and continue.
-parallel = shims.get_module_or_shim('utillib.parallel')
 simplewrap = shims.get_module_or_shim('utillib.simplewrap')
 version = shims.get_module_or_shim('utillib.version')
 phone = shims.get_module_or_shim('ET.phone')
@@ -108,6 +108,9 @@ def make_argparser():
   misc = parser.add_argument_group('Miscellaneous')
   misc.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
+  misc.add_argument('--max-results', type=int,
+    help=wrap('How long to go accumulating responses from worker subprocesses before dealing '
+              'with all of them. Default: the same as the number of workers.'))
   misc.add_argument('-v', '--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
   misc.add_argument('-h', '--help', action='store_true',
@@ -133,8 +136,14 @@ def main(argv):
                               test=args.test, fail='warn')
 
   # Process and validate arguments.
+  if args.max_results is None:
+    max_results = args.processes
+  else:
+    max_results = args.max_results
   if args.processes <= 0:
     fail('Error: --processes must be greater than zero.')
+  if max_results <= 0:
+    fail('Error: --max-results must be greater than zero.')
   if args.qual_format == 'sanger':
     qual_thres = chr(args.qual + SANGER_START)
   elif args.qual_format == 'solexa':
@@ -154,10 +163,10 @@ def main(argv):
     'sscs': (None, args.sscs1, args.sscs2),
   }
 
-  # Open a pool of worker processes.
+  # Open a pool of worker processes, and a list to cache results in.
   static_args = [args.incl_sscs, args.min_reads, args.cons_thres, args.min_cons_reads, qual_thres]
-  pool = parallel.RotatingPool(args.processes, process_duplex, static_args=static_args,
-                               give_logger=True)
+  pool = multiprocessing.Pool(args.processes)
+  results = []
 
   try:
 
@@ -191,8 +200,9 @@ def main(argv):
         # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
         if barcode is not None and (new_barcode or not (new_order and new_mate)):
           assert len(duplex) <= 2, duplex.keys()
-          result = pool.compute(duplex, barcode)
-          process_results(result, filehandles, stats)
+          results.append(pool.apply_async(process_duplex, args=[duplex, barcode]+static_args))
+          results = process_results(results, max_results, filehandles, stats)
+          stats['duplexes'] += 1
           duplex = collections.OrderedDict()
         barcode = this_barcode
         order = this_order
@@ -204,19 +214,20 @@ def main(argv):
     # Process the last family.
     duplex[(order, mate)] = family
     assert len(duplex) <= 2, duplex.keys()
-    result = pool.compute(duplex, barcode)
-    process_results(result, filehandles, stats)
+    results.append(pool.apply_async(process_duplex, args=[duplex, barcode]+static_args))
+    results = process_results(results, max_results, filehandles, stats)
+    stats['duplexes'] += 1
 
     # Do one last loop through the workers, reading the remaining results and stopping them.
     # Start at the worker after the last one processed by the previous loop.
     logging.info('Flushing remaining results from worker processes..')
-    for result in pool.flush():
-      process_results(result, filehandles, stats)
+    results = process_results(results, max_results, filehandles, stats)
 
   finally:
     # If the root process encounters an exception and doesn't tell the workers to stop, it will
     # hang forever.
-    pool.stop()
+    pool.close()
+    pool.join()
     # Close all open filehandles.
     if args.infile is not sys.stdin:
       args.infile.close()
@@ -324,17 +335,19 @@ def format_consensus(seq, barcode, reads_per_strand):
   return '>{bar} {reads}\n{seq}\n'.format(bar=barcode, reads=reads_str, seq=seq)
 
 
-def process_results(result, filehandles, stats):
-  if result is parallel.Sentinel:
-    return
-  dcs_str, sscs_strs, duplex_mate, run_stats = result
-  for key, value in run_stats.items():
-    stats[key] += value
-  if dcs_str and filehandles['dcs'][duplex_mate]:
-    filehandles['dcs'][duplex_mate].write(dcs_str)
-  for mate in (1, 2):
-    if sscs_strs[mate] and filehandles['sscs'][mate]:
-      filehandles['sscs'][mate].write(sscs_strs[mate])
+def process_results(results, max_results, filehandles, stats):
+  if len(results) < max_results:
+    return results
+  for result in results:
+    dcs_str, sscs_strs, duplex_mate, run_stats = result.get()
+    for key, value in run_stats.items():
+      stats[key] += value
+    if dcs_str and filehandles['dcs'][duplex_mate]:
+      filehandles['dcs'][duplex_mate].write(dcs_str)
+    for mate in (1, 2):
+      if sscs_strs[mate] and filehandles['sscs'][mate]:
+        filehandles['sscs'][mate].write(sscs_strs[mate])
+  return []
 
 
 def tone_down_logger():

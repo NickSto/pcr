@@ -9,11 +9,11 @@ import argparse
 import subprocess
 import collections
 import distutils.spawn
+import multiprocessing
 import seqtools
 import shims
 # There can be problems with the submodules, but none are essential.
 # Try to load these modules, but if there's a problem, load a harmless dummy and continue.
-parallel = shims.get_module_or_shim('utillib.parallel')
 simplewrap = shims.get_module_or_shim('utillib.simplewrap')
 version = shims.get_module_or_shim('utillib.version')
 phone = shims.get_module_or_shim('ET.phone')
@@ -52,6 +52,9 @@ def make_argparser():
     help=wrap('The multiple sequence aligner to use.'))
   parser.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Must be at least 1. Default: %(default)s.'))
+  parser.add_argument('--max-results', type=int,
+    help=wrap('How long to go accumulating responses from worker subprocesses before dealing '
+              'with all of them. Default: the same as the number of workers.'))
   parser.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
@@ -88,7 +91,14 @@ def main(argv):
     run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
                               test=args.test, fail='warn')
 
-  assert args.processes > 0, '-p must be greater than zero'
+  if args.max_results is None:
+    max_results = args.processes
+  else:
+    max_results = args.max_results
+  if args.processes <= 0:
+    fail('Error: --processes must be greater than zero.')
+  if max_results <= 0:
+    fail('Error: --max-results must be greater than zero.')
 
   # Check for required commands.
   missing_commands = []
@@ -98,9 +108,9 @@ def main(argv):
   if missing_commands:
     fail('Error: Missing commands: "'+'", "'.join(missing_commands)+'".')
 
-  # Open a pool of worker processes.
-  pool = parallel.RotatingPool(args.processes, process_duplex, static_args=[args.aligner],
-                               give_logger=True)
+  # Open a pool of worker processes, and a list to cache results in.
+  pool = multiprocessing.Pool(processes=args.processes)
+  results = []
 
   """Main loop.
   This processes whole duplexes (pairs of strands) at a time for a future option to align the
@@ -147,8 +157,9 @@ def main(argv):
         if this_barcode != barcode:
           # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
           #               '/'.join([str(len(duplex[o])) for o in duplex])))
-          result = pool.compute(duplex, barcode)
-          process_results(result, stats)
+          results.append(pool.apply_async(process_duplex, args=(duplex, barcode, args.aligner)))
+          results = process_results(results, max_results, stats)
+          stats['duplexes'] += 1
           duplex = collections.OrderedDict()
         barcode = this_barcode
         order = this_order
@@ -160,18 +171,19 @@ def main(argv):
     duplex[order] = family
     # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
     #               '/'.join([str(len(duplex[o])) for o in duplex])))
-    result = pool.compute(duplex, barcode)
-    process_results(result, stats)
+    results.append(pool.apply_async(process_duplex, args=(duplex, barcode, args.aligner)))
+    results = process_results(results, max_results, stats)
+    stats['duplexes'] += 1
 
     # Process all remaining families in the queue.
     logging.info('Flushing remaining results from worker processes..')
-    for result in pool.flush():
-      process_results(result, stats)
+    process_results(results, max_results, stats)
 
   finally:
     # If an exception occurs in the parent without stopping the child processes, this will hang.
     # Make sure to kill the children in all cases.
-    pool.stop()
+    pool.close()
+    pool.join()
 
   if args.infile is not sys.stdin:
     args.infile.close()
@@ -180,7 +192,6 @@ def main(argv):
   run_time = int(end_time - start_time)
 
   # Final stats on the run.
-  stats['duplexes'] = pool.jobs_submitted
   logging.error('Processed {pairs} read pairs in {duplexes} duplexes, with {failures} alignment '
                 'failures.'.format(**stats))
   if stats['aligned_pairs'] > 0 and stats['runs'] > 0:
@@ -326,16 +337,18 @@ def format_msa(align, barcode, order, mate, outfile=sys.stdout):
   return output
 
 
-def process_results(result, stats):
+def process_results(results, max_results, stats):
   """Process the outcome of a duplex run.
   Print the aligned output and sum the stats from the run with the running totals."""
-  if result is parallel.Sentinel:
-    return
-  output, run_stats = result
-  for key, value in run_stats.items():
-    stats[key] += value
-  if output:
-    sys.stdout.write(output)
+  if len(results) < max_results:
+    return results
+  for result in results:
+    output, run_stats = result.get()
+    for key, value in run_stats.items():
+      stats[key] += value
+    if output:
+      sys.stdout.write(output)
+  return []
 
 
 def tone_down_logger():
