@@ -24,7 +24,6 @@ phone = shims.get_module_or_shim('ET.phone')
 #      to make, but it's not obvious that it happened. The pipeline won't fail, but will just
 #      produce pretty weird results.
 
-REQUIRED_COMMANDS = ['mafft']
 USAGE = '$ %(prog)s [options] families.tsv > families.msa.tsv'
 DESCRIPTION = """Read in sorted FASTQ data and do multiple sequence alignments of each family."""
 
@@ -100,13 +99,9 @@ def main(argv):
   if max_results <= 0:
     fail('Error: --max-results must be greater than zero.')
 
-  # Check for required commands.
-  missing_commands = []
-  for command in REQUIRED_COMMANDS:
-    if not distutils.spawn.find_executable(command):
-      missing_commands.append(command)
-  if missing_commands:
-    fail('Error: Missing commands: "'+'", "'.join(missing_commands)+'".')
+  # If we're using mafft, check that we can execute it.
+  if args.aligner == 'mafft' and not distutils.spawn.find_executable('mafft'):
+    fail('Error: Could not find "mafft" command on $PATH.')
 
   # Open a pool of worker processes, and a list to cache results in.
   pool = multiprocessing.Pool(processes=args.processes)
