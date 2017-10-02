@@ -22,7 +22,7 @@
       <option value="solexa">Solexa (PHRED 0 = &quot;@&quot;)</option>
     </param>
     <param name="keep_sscs" type="boolean" truevalue="true" falsevalue="" label="Output single-strand consensus sequences as well" />
-    <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send anonymous usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the time taken to process it, and the IP address of the machine running it. No parameters or filenames are sent."/>
+    <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the number of processes used, the time taken to process it, and the IP address of the machine running it. The parameters and input/output dataset names are not sent."/>
   </inputs>
   <outputs>
     <data name="dcs1" format="fasta" label="$tool.name on $on_string (mate 1)"/>

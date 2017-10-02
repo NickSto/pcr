@@ -6,11 +6,15 @@
     <requirement type="package" version="0.8.1">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
-  <command detect_errors="exit_code">align_families.py --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
+  <command detect_errors="exit_code">align_families.py --aligner $aligner --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Input reads" help="with barcodes, grouped by family"/>
-    <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send anonymous usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the time taken to process it, and the IP address of the machine running it. No parameters or filenames are sent."/>
+    <param name="aligner" type="select" value="mafft" label="Multiple sequence aligner" help="MAFFT is the original aligner Du Novo was published with in 2016. Kalign is much faster and has similar accuracy.">
+      <option value="kalign">Kalign</option>
+      <option value="mafft">MAFFT</option>
+    </param>
+    <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the number of processes used, the time taken to process it, the alignment algorithm selected, and the IP address of the machine running it. The names of the input and output datasets are not sent."/>
   </inputs>
   <outputs>
     <data name="output" format="tabular"/>
