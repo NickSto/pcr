@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import division
+import os
 import sys
 import time
 import logging
@@ -90,8 +91,9 @@ def make_argparser():
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
               'version of the tool, the size of the input data, the time taken to process it, and '
-              'the IP address of the machine running it. No parameters or filenames are sent. All '
-              'the reporting and recording code is available at https://github.com/NickSto/ET.'))
+              'the IP address of the machine running it. No filenames are sent, and the only '
+              'parameter reported is the number of processes. All the reporting and recording code '
+              'is available at https://github.com/NickSto/ET.'))
   phoning.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
     help=wrap('Tell the script it\'s running on Galaxy. Currently this only affects data reported '
               'when phoning home.'))
@@ -131,9 +133,16 @@ def main(argv):
   tone_down_logger()
 
   start_time = time.time()
+  # If the user requested, report back some data about the start of the run.
   if args.phone_home:
-    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
-                              test=args.test, fail='warn')
+    call = phone.Call(__file__, version.get_version(), platform=args.platform, test=args.test,
+                      fail='warn')
+    call.send_data('start')
+    if args.infile is sys.stdin:
+      data = {'stdin':True, 'input_size':None}
+    else:
+      data = {'stdin':False, 'input_size':os.path.getsize(args.infile.name)}
+    call.send_data('prelim', run_data=data)
 
   # Process and validate arguments.
   if args.max_results is None:
@@ -248,10 +257,11 @@ def main(argv):
     logging.info('{:0.3f}s per read, {:0.3f}s per run.'.format(per_read, per_run))
 
   if args.phone_home:
-    stats['consensus_time'] = stats['time']
-    del stats['time']
-    phone.send_end(__file__, version.get_version(), run_id, run_time, stats, platform=args.platform,
-                   test=args.test, fail='warn')
+    run_data = stats.copy()
+    run_data['consensus_time'] = run_data['time']
+    del run_data['time']
+    run_data['processes'] = args.processes
+    call.send_data('end', run_time=run_time, run_data=run_data)
 
 
 def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5, min_cons_reads=0,
