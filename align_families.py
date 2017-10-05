@@ -213,7 +213,7 @@ def main(argv):
     call.send_data('end', run_time=run_time, run_data=run_data)
 
 
-def process_duplex(duplex, barcode, aligner='mafft', logger=logging):
+def process_duplex(duplex, barcode, aligner='mafft'):
   output = ''
   run_stats = {'time':0, 'runs':0, 'aligned_pairs':0, 'failures':0}
   orders = duplex.keys()
@@ -227,37 +227,37 @@ def process_duplex(duplex, barcode, aligner='mafft', logger=logging):
     # strand1/mate1, strand2/mate2, strand1/mate2, strand2/mate1
     combos = ((1, orders[0]), (2, orders[1]), (2, orders[0]), (1, orders[1]))
   else:
-    raise AssertionError('Error: More than 2 orders in duplex {}: {}'.format(barcode, orders))
+    raise AssertionError('More than 2 orders in duplex {}: {}'.format(barcode, orders))
   for mate, order in combos:
     family = duplex[order]
     start = time.time()
     try:
-      alignment = align_family(family, mate, aligner=aligner, logger=logger)
+      alignment = align_family(family, mate, aligner=aligner)
     except AssertionError as error:
-      logger.critical('AssertionError on family {}, order {}, mate {}:\n{}.'
-                      .format(barcode, order, mate, error))
-      raise
+      context = '\n... on family {}, order {}, mate {}.'.format(barcode, order, mate)
+      error.args = (error.args[0]+context,)
+      raise error
     except (OSError, subprocess.CalledProcessError) as error:
-      logger.warning('{} on family {}, order {}, mate {}:\n{}'
+      logging.warning('{} on family {}, order {}, mate {}:\n{}'
                      .format(type(error).__name__, barcode, order, mate, error))
       alignment = None
     # Compile statistics.
     elapsed = time.time() - start
     pairs = len(family)
-    logger.info('{} sec for {} read pairs.'.format(elapsed, pairs))
+    logging.info('{} sec for {} read pairs.'.format(elapsed, pairs))
     if pairs > 1:
       run_stats['time'] += elapsed
       run_stats['runs'] += 1
       run_stats['aligned_pairs'] += pairs
     if alignment is None:
-      logger.warning('Error aligning family {}/{} (read {}).'.format(barcode, order, mate))
+      logging.warning('Error aligning family {}/{} (read {}).'.format(barcode, order, mate))
       run_stats['failures'] += 1
     else:
       output += format_msa(alignment, barcode, order, mate)
   return output, run_stats
 
 
-def align_family(family, mate, aligner='mafft', logger=logging):
+def align_family(family, mate, aligner='mafft'):
   """Do a multiple sequence alignment of the reads in a family and their quality scores."""
   mate = str(mate)
   assert mate == '1' or mate == '2'
@@ -268,7 +268,7 @@ def align_family(family, mate, aligner='mafft', logger=logging):
     aligned_seqs = [family[0]['seq'+mate]]
   else:
     # Do the multiple sequence alignment.
-    aligned_seqs = make_msa(family, mate, aligner=aligner, logger=logger)
+    aligned_seqs = make_msa(family, mate, aligner=aligner)
   # Transfer the alignment to the quality scores.
   ## Get a list of all quality scores in the family for this mate.
   quals_raw = [pair['qual'+mate] for pair in family]
@@ -280,24 +280,24 @@ def align_family(family, mate, aligner='mafft', logger=logging):
   return alignment
 
 
-def make_msa(family, mate, aligner='mafft', logger=logging):
+def make_msa(family, mate, aligner='mafft'):
   if aligner == 'mafft':
-    return make_msa_mafft(family, mate, logger=logger)
+    return make_msa_mafft(family, mate)
   elif aligner == 'kalign':
-    return make_msa_kalign(family, mate, logger=logger)
+    return make_msa_kalign(family, mate)
 
 
-def make_msa_kalign(family, mate, logger=logging):
-  logger.info('Aligning with kalign.')
+def make_msa_kalign(family, mate):
+  logging.info('Aligning with kalign.')
   import kalign
   seqs = [pair['seq'+mate] for pair in family]
   return kalign.align(seqs)
 
 
-def make_msa_mafft(family, mate, logger=logging):
+def make_msa_mafft(family, mate):
   """Perform a multiple sequence alignment on a set of sequences and parse the result.
   Uses MAFFT."""
-  logger.info('Aligning with mafft.')
+  logging.info('Aligning with mafft.')
   #TODO: Replace with tempfile.mkstemp()?
   with tempfile.NamedTemporaryFile('w', delete=False, prefix='align.msa.') as family_file:
     for pair in family:
