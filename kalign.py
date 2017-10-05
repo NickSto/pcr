@@ -57,7 +57,7 @@ def align(seqs):
     argc, argv = make_args(input_file.name, output_file.name)
     # print '$ '+' '.join([arg for arg in argv])
     kalign.main(argc, argv)
-    return read_fasta(output_file.name)
+    fasta = read_fasta(output_file.name)
   finally:
     # Make sure we delete the temporary files.
     try:
@@ -68,6 +68,7 @@ def align(seqs):
       os.remove(output_file.name)
     except OSError:
       pass
+  return fasta
 
 
 def make_args(infile, outfile):
@@ -90,13 +91,17 @@ def read_fasta(fasta):
   Warning: Reads the entire contents of the file into memory at once."""
   sequences = []
   sequence = ''
+  line_num = 0
   with open(fasta) as fasta_file:
     for line in fasta_file:
+      line_num += 1
       if line.startswith('>'):
         if sequence:
           sequences.append(sequence.upper())
         sequence = ''
         continue
+      elif line_num == 1:
+        raise AssertionError('Malformed FASTA {}: First line must begin with ">".'.format(fasta))
       sequence += line.strip()
   if sequence:
     sequences.append(sequence.upper())
