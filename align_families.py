@@ -289,9 +289,10 @@ def make_msa(family, mate, aligner='mafft'):
 
 def make_msa_kalign(family, mate):
   logging.info('Aligning with kalign.')
-  import kalign
+  from kalign import kalign
   seqs = [pair['seq'+mate] for pair in family]
-  return kalign.align(seqs)
+  aln_struct = kalign.align(seqs)
+  return [aln_struct.seqs[i] for i in range(aln_struct.nseqs)]
 
 
 def make_msa_mafft(family, mate):
