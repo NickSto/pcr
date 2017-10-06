@@ -18,11 +18,21 @@ if not os.path.isfile(library_path):
 kalign = ctypes.cdll.LoadLibrary(library_path)
 
 
+class AlnStrs(ctypes.Structure):
+  _fields_ = [
+    ('nseqs', ctypes.c_int),
+    ('seqlen', ctypes.c_int),
+    ('names', ctypes.POINTER(ctypes.c_char_p)),
+    ('seqs', ctypes.POINTER(ctypes.c_char_p)),
+  ]
+
+kalign.main.restype = ctypes.POINTER(AlnStrs)
+
+
 def make_argparser():
   parser = argparse.ArgumentParser(description='Align a set of sequences.')
   parser.add_argument('input', type=argparse.FileType('r'), default=sys.stdin, nargs='?',
     help='Input sequences.')
-  # parser.add_argument('infile', metavar='seqs.fa')
   return parser
 
 
@@ -37,14 +47,12 @@ def main(argv):
     else:
       seqs.append(line)
   alignment = align(seqs)
-  print
-  for i, seq in enumerate(alignment):
-    print '>seq{}\n{}'.format(i, seq)
+  for i in range(alignment.nseqs):
+    print alignment.seqs[i]
 
 
 def align(seqs):
-  """Perform a multiple sequence alignment on a set of sequences and parse the result.
-  Uses MAFFT."""
+  """Perform a multiple sequence alignment on a set of sequences and parse the result."""
   i = 0
   try:
     with tempfile.NamedTemporaryFile('w', delete=False, prefix='align.msa.') as input_file:
@@ -56,19 +64,14 @@ def align(seqs):
     output_file.close()
     argc, argv = make_args(input_file.name, output_file.name)
     # print '$ '+' '.join([arg for arg in argv])
-    kalign.main(argc, argv)
-    fasta = read_fasta(output_file.name)
+    aln = kalign.main(argc, argv)
+    return aln.contents
   finally:
     # Make sure we delete the temporary files.
     try:
       os.remove(input_file.name)
     except OSError:
       pass
-    try:
-      os.remove(output_file.name)
-    except OSError:
-      pass
-  return fasta
 
 
 def make_args(infile, outfile):
@@ -83,29 +86,6 @@ def strlist_to_c(strlist):
   for i, s in enumerate(strlist):
     c_strs[i] = ctypes.c_char_p(s)
   return c_strs
-
-
-def read_fasta(fasta):
-  """Quick and dirty FASTA parser. Return the sequences and their names.
-  Returns a list of sequences.
-  Warning: Reads the entire contents of the file into memory at once."""
-  sequences = []
-  sequence = ''
-  line_num = 0
-  with open(fasta) as fasta_file:
-    for line in fasta_file:
-      line_num += 1
-      if line.startswith('>'):
-        if sequence:
-          sequences.append(sequence.upper())
-        sequence = ''
-        continue
-      elif line_num == 1:
-        raise AssertionError('Malformed FASTA {}: First line must begin with ">".'.format(fasta))
-      sequence += line.strip()
-  if sequence:
-    sequences.append(sequence.upper())
-  return sequences
 
 
 if __name__ == '__main__':
