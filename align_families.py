@@ -70,7 +70,7 @@ def make_argparser():
   parser.add_argument('--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
   parser.add_argument('-L', '--log-file', type=argparse.FileType('w'), default=sys.stderr,
-    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+    help=wrap('Print log messages to this file instead of to stderr. NOTE: Will overwrite the file.'))
   parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
                       default=logging.WARNING)
   parser.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
@@ -179,9 +179,9 @@ def main(argv):
     results = process_results(results, max_results, stats)
     stats['duplexes'] += 1
 
-    # Process all remaining families in the queue.
+    # Retrieve the remaining results.
     logging.info('Flushing remaining results from worker processes..')
-    process_results(results, max_results, stats)
+    process_results(results, 0, stats)
 
   finally:
     # If an exception occurs in the parent without stopping the child processes, this will hang.

@@ -227,10 +227,9 @@ def main(argv):
     results = process_results(results, max_results, filehandles, stats)
     stats['duplexes'] += 1
 
-    # Do one last loop through the workers, reading the remaining results and stopping them.
-    # Start at the worker after the last one processed by the previous loop.
+    # Retrieve the remaining results.
     logging.info('Flushing remaining results from worker processes..')
-    results = process_results(results, max_results, filehandles, stats)
+    results = process_results(results, 0, filehandles, stats)
 
   finally:
     # If the root process encounters an exception and doesn't tell the workers to stop, it will
