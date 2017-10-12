@@ -48,7 +48,7 @@ def make_argparser():
               '7. read 2 sequence\n'
               '8. read 2 quality scores'))
   parser.add_argument('-a', '--aligner', choices=('mafft', 'kalign'), default='mafft',
-    help=wrap('The multiple sequence aligner to use.'))
+    help=wrap('The multiple sequence aligner to use. Default: %(default)s'))
   parser.add_argument('-p', '--processes', type=int, default=1,
     help=wrap('Number of worker subprocesses to use. Must be at least 1. Default: %(default)s.'))
   parser.add_argument('--max-results', type=int,
