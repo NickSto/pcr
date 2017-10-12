@@ -119,3 +119,8 @@ The reads will be printed in two files, one per paired-end mate, with this namin
 `>{barcode} {# reads in strand 1 family}-{# reads in strand 2 family}`  
 e.g.  
 `>TTGCGCCAGGGCGAGGAAAATACT 8-13`
+
+
+### Known bugs
+
+Be aware that a [known bug](https://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool/1408476#1408476) in Python when using the [multiprocessing](https://docs.python.org/2/library/multiprocessing.html) module makes it impossible to kill a running process with the Ctrl+C keyboard command. So if you run `align_families.py` or `dunovo.py` in the foreground, you'll have to exit via Ctrl+Z to stop and background the job, then kill the process (e.g. with `$ kill %1`, if it's the only backgrounded job).
