@@ -18,7 +18,8 @@ phone = shims.get_module_or_shim('ET.phone')
 
 SANGER_START = 33
 SOLEXA_START = 64
-USAGE = '$ %(prog)s [options] families.msa.tsv > duplex-consensuses.fa'
+USAGE = """$ %(prog)s [options] families.msa.tsv -1 duplexes_1.fa -2 duplexes_2.fa
+       $ cat families.msa.tsv | %(prog)s [options] -1 duplexes_1.fa -2 duplexes_2.fa"""
 DESCRIPTION = """Build consensus sequences from read aligned families. Prints duplex consensus \
 sequences in FASTA to stdout. The sequence ids are BARCODE.MATE, e.g. "CTCAGATAACATACCTTATATGCA.1", \
 where "BARCODE" is the input barcode, and "MATE" is "1" or "2" as an arbitrary designation of the \

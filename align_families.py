@@ -24,7 +24,8 @@ phone = shims.get_module_or_shim('ET.phone')
 #      to make, but it's not obvious that it happened. The pipeline won't fail, but will just
 #      produce pretty weird results.
 
-USAGE = '$ %(prog)s [options] families.tsv > families.msa.tsv'
+USAGE = """$ %(prog)s [options] families.tsv > families.msa.tsv
+       $ cat families.tsv | %(prog)s [options] > families.msa.tsv"""
 DESCRIPTION = """Read in sorted FASTQ data and do multiple sequence alignments of each family."""
 
 def make_argparser():
