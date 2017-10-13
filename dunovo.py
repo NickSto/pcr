@@ -264,12 +264,12 @@ def main(argv):
 
 
 def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5, min_cons_reads=0,
-                   qual_thres=' ', logger=logging):
+                   qual_thres=' '):
   """Create one duplex consensus sequence from a pair of single-stranded families."""
   # The code in the main loop ensures that "duplex" contains only reads belonging to one final
   # duplex consensus read: ab.1 and ba.2 reads OR ab.2 and ba.1 reads. (Of course, one half might
   # be missing).
-  logger.info('Starting duplex {}'.format(barcode))
+  logging.info('Starting duplex {}'.format(barcode))
   start = time.time()
   # Construct consensus sequences.
   sscss, dcs_seq, duplex_mate = make_consensuses(duplex, min_reads, cons_thres, min_cons_reads,
@@ -279,7 +279,7 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5
   dcs_str, sscs_strs = format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand)
   # Calculate run statistics.
   elapsed = time.time() - start
-  logger.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
+  logging.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
   if len(sscss) > 0:
     run_stats = {'time':elapsed, 'runs':1, 'reads':sum(reads_per_strand)}
   else:
