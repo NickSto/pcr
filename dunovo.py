@@ -5,6 +5,8 @@ import sys
 import time
 import logging
 import argparse
+import functools
+import traceback
 import collections
 import multiprocessing
 import consensus
@@ -174,9 +176,18 @@ def main(argv):
   }
 
   # Open a pool of worker processes, and a list to cache results in.
-  static_args = [args.incl_sscs, args.min_reads, args.cons_thres, args.min_cons_reads, qual_thres]
   pool = multiprocessing.Pool(args.processes)
   results = []
+
+  # Bind static arguments to process_duplex() so you don't have to give them every time.
+  wrapped_fxn = functools.partial(
+    process_duplex,
+    incl_sscs=args.incl_sscs,
+    min_reads=args.min_reads,
+    cons_thres=args.cons_thres,
+    min_cons_reads=args.min_cons_reads,
+    qual_thres=qual_thres
+  )
 
   try:
 
@@ -210,7 +221,7 @@ def main(argv):
         # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
         if barcode is not None and (new_barcode or not (new_order and new_mate)):
           assert len(duplex) <= 2, duplex.keys()
-          results.append(pool.apply_async(process_duplex, args=[duplex, barcode]+static_args))
+          results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
           results = process_results(results, max_results, filehandles, stats)
           stats['duplexes'] += 1
           duplex = collections.OrderedDict()
@@ -224,7 +235,7 @@ def main(argv):
     # Process the last family.
     duplex[(order, mate)] = family
     assert len(duplex) <= 2, duplex.keys()
-    results.append(pool.apply_async(process_duplex, args=[duplex, barcode]+static_args))
+    results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
     results = process_results(results, max_results, filehandles, stats)
     stats['duplexes'] += 1
 
@@ -262,6 +273,30 @@ def main(argv):
     del run_data['time']
     run_data['processes'] = args.processes
     call.send_data('end', run_time=run_time, run_data=run_data)
+
+
+def with_context(fxn, *args, **kwargs):
+  """Execute fxn, adding child process' stack trace to any Exceptions that are raised.
+  When Exceptions are raised in a multiprocessing subprocess, the stack trace it gives ends where
+  you call .get() on the .apply_async() return value.
+  This adds the real stack trace to the Exception's message and re-raises it, so it gets printed
+  to stderr.
+  Usage:
+  To execute real_fxn(arg1, arg2) through this, do:
+    result = pool.apply_async(with_context, args=(real_fxn, arg1, arg2))
+  Note: This would be a decorator, but that doesn't work with multiprocessing.
+  Functions below the top-level of a module aren't picklable and so can't be passed through
+  a Queue to subprocesses:
+  https://stackoverflow.com/questions/8804830/python-multiprocessing-pickling-error/8805244#8805244
+  """
+  try:
+    return fxn(*args, **kwargs)
+  except Exception as exception:
+    tb = traceback.format_exc()
+    logging.exception(tb)
+    new_message = exception.args[0] + '\nIn child process:\n' + tb
+    exception.args = (new_message,)
+    raise exception
 
 
 def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5, min_cons_reads=0,
