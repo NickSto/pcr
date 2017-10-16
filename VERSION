@@ -1,4 +1,4 @@
 [version]
 project = dunovo
-version_num = 0.8.2
-stage = alpha
+version_num = 2.0.0
+stage = rc.1
