@@ -1,6 +1,8 @@
 CFLAGS = -Wall -shared -fPIC
 
-all: local make_kalign
+.PHONY: all clean local kalign clean_kalign clean_local
+
+all: local kalign
 
 local:
 	gcc $(CFLAGS) align.c -o libalign.so
@@ -8,7 +10,7 @@ local:
 	gcc $(CFLAGS) seqtools.c -o libseqtools.so
 	gcc $(CFLAGS) consensus.c -o libconsensus.so
 
-make_kalign:
+kalign:
 	cd kalign && make
 
 clean: clean_local clean_kalign
