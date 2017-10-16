@@ -32,22 +32,6 @@
       <output name="output" file="smoke.families.i0.tsv"/>
     </test>
   </tests>
-  <citations>
-    <citation type="bibtex">@article{Stoler2016,
-      author = {Stoler, Nicholas and Arbeithuber, Barbara and Guiblet, Wilfried and Makova, Kateryna D and Nekrutenko, Anton},
-      doi = {10.1186/s13059-016-1039-4},
-      issn = {1474-760X},
-      journal = {Genome biology},
-      number = {1},
-      pages = {180},
-      pmid = {27566673},
-      publisher = {Genome Biology},
-      title = {{Streamlined analysis of duplex sequencing data with Du Novo.}},
-      url = {http://www.ncbi.nlm.nih.gov/pubmed/27566673},
-      volume = {17},
-      year = {2016}
-    }</citation>
-  </citations>
   <help>
 
 **What it does**
@@ -91,5 +75,21 @@ Examples::
   |  CCT  |  ATG  |  ba   | ATGCCT  |
   +-------+-------+-------+---------+
 
-    </help>
+  </help>
+  <citations>
+    <citation type="bibtex">@article{Stoler2016,
+      author = {Stoler, Nicholas and Arbeithuber, Barbara and Guiblet, Wilfried and Makova, Kateryna D and Nekrutenko, Anton},
+      doi = {10.1186/s13059-016-1039-4},
+      issn = {1474-760X},
+      journal = {Genome biology},
+      number = {1},
+      pages = {180},
+      pmid = {27566673},
+      publisher = {Genome Biology},
+      title = {{Streamlined analysis of duplex sequencing data with Du Novo.}},
+      url = {http://www.ncbi.nlm.nih.gov/pubmed/27566673},
+      volume = {17},
+      year = {2016}
+    }</citation>
+  </citations>
 </tool>

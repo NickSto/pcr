@@ -26,22 +26,6 @@
   <outputs>
     <data name="output" format="tabular"/>
   </outputs>
-  <citations>
-    <citation type="bibtex">@article{Stoler2016,
-      author = {Stoler, Nicholas and Arbeithuber, Barbara and Guiblet, Wilfried and Makova, Kateryna D and Nekrutenko, Anton},
-      doi = {10.1186/s13059-016-1039-4},
-      issn = {1474-760X},
-      journal = {Genome biology},
-      number = {1},
-      pages = {180},
-      pmid = {27566673},
-      publisher = {Genome Biology},
-      title = {{Streamlined analysis of duplex sequencing data with Du Novo.}},
-      url = {http://www.ncbi.nlm.nih.gov/pubmed/27566673},
-      volume = {17},
-      year = {2016}
-    }</citation>
-  </citations>
   <help>
 
 **What it does**
@@ -60,5 +44,21 @@ This expects the output format of the "Make families" tool.
 
 The output format is the same as the input format, ready to be consumed by the "Align families" tool.
 
-    </help>
+  </help>
+  <citations>
+    <citation type="bibtex">@article{Stoler2016,
+      author = {Stoler, Nicholas and Arbeithuber, Barbara and Guiblet, Wilfried and Makova, Kateryna D and Nekrutenko, Anton},
+      doi = {10.1186/s13059-016-1039-4},
+      issn = {1474-760X},
+      journal = {Genome biology},
+      number = {1},
+      pages = {180},
+      pmid = {27566673},
+      publisher = {Genome Biology},
+      title = {{Streamlined analysis of duplex sequencing data with Du Novo.}},
+      url = {http://www.ncbi.nlm.nih.gov/pubmed/27566673},
+      volume = {17},
+      year = {2016}
+    }</citation>
+  </citations>
 </tool>
