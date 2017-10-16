@@ -111,11 +111,12 @@ def make_argparser():
   log.add_argument('-V', '--verbose', dest='volume', action='store_const', const=logging.INFO)
   log.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
   misc = parser.add_argument_group('Miscellaneous')
-  misc.add_argument('-p', '--processes', type=int, default=1,
-    help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
-  misc.add_argument('--max-results', type=int,
+  misc.add_argument('-p', '--processes', type=int, default=0,
+    help=wrap('Number of worker subprocesses to use. If 0, no subprocesses will be started and '
+              'everything will be done inside one process. Default: %(default)s.'))
+  misc.add_argument('--queue-size', type=int,
     help=wrap('How long to go accumulating responses from worker subprocesses before dealing '
-              'with all of them. Default: the same as the number of workers.'))
+              'with all of them. Default: 8 * the number of worker --processes.'))
   misc.add_argument('-v', '--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
   misc.add_argument('-h', '--help', action='store_true',
@@ -148,14 +149,17 @@ def main(argv):
     call.send_data('prelim', run_data=data)
 
   # Process and validate arguments.
-  if args.max_results is None:
-    max_results = args.processes
+  if args.queue_size is None:
+    if args.processes == 0:
+      queue_size = 1
+    else:
+      queue_size = args.processes * 8
   else:
-    max_results = args.max_results
-  if args.processes <= 0:
-    fail('Error: --processes must be greater than zero.')
-  if max_results <= 0:
-    fail('Error: --max-results must be greater than zero.')
+    queue_size = args.queue_size
+  if args.processes < 0:
+    fail('Error: --processes must be at least zero.')
+  if queue_size <= 0:
+    fail('Error: --queue-size must be greater than zero.')
   if args.qual_format == 'sanger':
     qual_thres = chr(args.qual + SANGER_START)
   elif args.qual_format == 'solexa':
@@ -176,7 +180,11 @@ def main(argv):
   }
 
   # Open a pool of worker processes, and a list to cache results in.
-  pool = multiprocessing.Pool(args.processes)
+  if args.processes == 0:
+    # If --processes is 0, don't actually parallelize. Do everything inside this process.
+    pool = FakePool()
+  else:
+    pool = multiprocessing.Pool(processes=args.processes)
   results = []
 
   # Bind static arguments to process_duplex() so you don't have to give them every time.
@@ -222,7 +230,7 @@ def main(argv):
         if barcode is not None and (new_barcode or not (new_order and new_mate)):
           assert len(duplex) <= 2, duplex.keys()
           results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
-          results = process_results(results, max_results, filehandles, stats)
+          results = process_results(results, queue_size, filehandles, stats)
           stats['duplexes'] += 1
           duplex = collections.OrderedDict()
         barcode = this_barcode
@@ -236,7 +244,7 @@ def main(argv):
     duplex[(order, mate)] = family
     assert len(duplex) <= 2, duplex.keys()
     results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
-    results = process_results(results, max_results, filehandles, stats)
+    results = process_results(results, queue_size, filehandles, stats)
     stats['duplexes'] += 1
 
     # Retrieve the remaining results.
@@ -273,6 +281,26 @@ def main(argv):
     del run_data['time']
     run_data['processes'] = args.processes
     call.send_data('end', run_time=run_time, run_data=run_data)
+
+
+class FakePool(object):
+  """A dummy version of multiprocessing.Pool which isn't actually parallelized.
+  Use this instead of multiprocessing.Pool to do all work inside one process."""
+  def apply_async(self, fxn, args=[], kwargs={}):
+    result_data = fxn(*args, **kwargs)
+    return FakeResult(result_data)
+  def close(self):
+    pass
+  def join(self):
+    pass
+
+
+class FakeResult(object):
+  """A dummy version of multiprocessing.pool.AsyncResult to hold a result from FakePool."""
+  def __init__(self, result_data, timeout=None):
+    self.result_data = result_data
+  def get(self):
+    return self.result_data
 
 
 def with_context(fxn, *args, **kwargs):
@@ -380,8 +408,8 @@ def format_consensus(seq, barcode, reads_per_strand):
   return '>{bar} {reads}\n{seq}\n'.format(bar=barcode, reads=reads_str, seq=seq)
 
 
-def process_results(results, max_results, filehandles, stats):
-  if len(results) < max_results:
+def process_results(results, queue_size, filehandles, stats):
+  if len(results) < queue_size:
     return results
   for result in results:
     dcs_str, sscs_strs, duplex_mate, run_stats = result.get()

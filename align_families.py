@@ -52,11 +52,12 @@ def make_argparser():
               '8. read 2 quality scores'))
   parser.add_argument('-a', '--aligner', choices=('mafft', 'kalign'), default='mafft',
     help=wrap('The multiple sequence aligner to use. Default: %(default)s'))
-  parser.add_argument('-p', '--processes', type=int, default=1,
-    help=wrap('Number of worker subprocesses to use. Must be at least 1. Default: %(default)s.'))
-  parser.add_argument('--max-results', type=int,
+  parser.add_argument('-p', '--processes', type=int, default=0,
+    help=wrap('Number of worker subprocesses to use. If 0, no subprocesses will be started and '
+              'everything will be done inside one process. Default: %(default)s.'))
+  parser.add_argument('--queue-size', type=int,
     help=wrap('How long to go accumulating responses from worker subprocesses before dealing '
-              'with all of them. Default: the same as the number of workers.'))
+              'with all of them. Default: 8 * the number of worker --processes.'))
   parser.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
@@ -102,21 +103,28 @@ def main(argv):
       data = {'stdin':False, 'input_size':os.path.getsize(args.infile.name)}
     call.send_data('prelim', run_data=data)
 
-  if args.max_results is None:
-    max_results = args.processes
+  if args.queue_size is None:
+    if args.processes == 0:
+      queue_size = 1
+    else:
+      queue_size = args.processes * 8
   else:
-    max_results = args.max_results
-  if args.processes <= 0:
-    fail('Error: --processes must be greater than zero.')
-  if max_results <= 0:
-    fail('Error: --max-results must be greater than zero.')
+    queue_size = args.queue_size
+  if args.processes < 0:
+    fail('Error: --processes must be at least zero.')
+  if queue_size <= 0:
+    fail('Error: --queue-size must be greater than zero.')
 
   # If we're using mafft, check that we can execute it.
   if args.aligner == 'mafft' and not distutils.spawn.find_executable('mafft'):
     fail('Error: Could not find "mafft" command on $PATH.')
 
   # Open a pool of worker processes, and a list to cache results in.
-  pool = multiprocessing.Pool(processes=args.processes)
+  if args.processes == 0:
+    # If --processes is 0, don't actually parallelize. Do everything inside this process.
+    pool = FakePool()
+  else:
+    pool = multiprocessing.Pool(processes=args.processes)
   results = []
 
   # Bind static arguments to process_duplex() so you don't have to give them every time.
@@ -168,7 +176,7 @@ def main(argv):
           # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
           #               '/'.join([str(len(duplex[o])) for o in duplex])))
           results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
-          results = process_results(results, max_results, stats)
+          results = process_results(results, queue_size, stats)
           stats['duplexes'] += 1
           duplex = collections.OrderedDict()
         barcode = this_barcode
@@ -182,7 +190,7 @@ def main(argv):
     # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
     #               '/'.join([str(len(duplex[o])) for o in duplex])))
     results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
-    results = process_results(results, max_results, stats)
+    results = process_results(results, queue_size, stats)
     stats['duplexes'] += 1
 
     # Retrieve the remaining results.
@@ -217,6 +225,26 @@ def main(argv):
     run_data['processes'] = args.processes
     run_data['aligner'] = args.aligner
     call.send_data('end', run_time=run_time, run_data=run_data)
+
+
+class FakePool(object):
+  """A dummy version of multiprocessing.Pool which isn't actually parallelized.
+  Use this instead of multiprocessing.Pool to do all work inside one process."""
+  def apply_async(self, fxn, args=[], kwargs={}):
+    result_data = fxn(*args, **kwargs)
+    return FakeResult(result_data)
+  def close(self):
+    pass
+  def join(self):
+    pass
+
+
+class FakeResult(object):
+  """A dummy version of multiprocessing.pool.AsyncResult to hold a result from FakePool."""
+  def __init__(self, result_data, timeout=None):
+    self.result_data = result_data
+  def get(self):
+    return self.result_data
 
 
 def with_context(fxn, *args, **kwargs):
@@ -374,10 +402,10 @@ def format_msa(align, barcode, order, mate, outfile=sys.stdout):
   return output
 
 
-def process_results(results, max_results, stats):
+def process_results(results, queue_size, stats):
   """Process the outcome of a duplex run.
   Print the aligned output and sum the stats from the run with the running totals."""
-  if len(results) < max_results:
+  if len(results) < queue_size:
     return results
   for result in results:
     output, run_stats = result.get()
