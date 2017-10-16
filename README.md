@@ -1,36 +1,40 @@
-# _Du Novo_
+# Du Novo
 
 This is a pipeline for processing of duplex sequencing data without the use of a reference genome.
 
 The pipeline was designed for use with the duplex method described in [Kennedy *et al.* 2014](https://dx.doi.org/10.1038/nprot.2014.170), but the assumptions are relatively minimal, so you should be able to apply it to variants of the protocol.
 
-Du Novo 2.0 is released under the GPLv2 license, except for some portions governed by the MIT license. See `LICENSE.txt` for details.
+Du Novo 2.0 is released under the GPLv2 license, except for some portions governed by the MIT license. Earlier versions were released under the BSD license. See `LICENSE.txt` for details.
 
 
-## Running _Du Novo_ from Galaxy
+## Running Du Novo from Galaxy
 
-We created a comprehensive [tutorial](https://github.com/galaxyproject/dunovo/wiki) explaining all aspects of interactive use of _De Novo_ from within [Galaxy](http://usegalaxy.org).
-
-
-## Running _Du Novo_ on the command line
+We created a comprehensive [tutorial](https://github.com/galaxyproject/dunovo/wiki) explaining all aspects of interactive use of Du Novo from within [Galaxy](http://usegalaxy.org).
 
 
-### Requirements
+## Running Du Novo on the command line
 
-The pipeline requires a Unix command line, and it must be able to find the `mafft` command on your [`PATH`](https://en.wikipedia.org/wiki/Search_path).
 
-All known requirements are below. Version numbers in parentheses are what the development environment uses. Version numbers in **bold** are known to be required.
+### Dependencies
 
-* [MAFFT](http://mafft.cbrc.jp/alignment/software/) (v7.123b)
-* [Python](https://www.python.org/) (**2.7**)  
+#### Required
 
-And standard unix tools:
+The pipeline requires a Unix operating system and Python version 2.7.
+
+It also requires several standard Unix tools. Version numbers in parentheses are what the software was tested with, but other versions likely work:
  -  [gcc](https://gcc.gnu.org/) (4.8.4)
  -  [make](https://www.gnu.org/software/make/) (3.81)
  -  [bash](https://www.gnu.org/software/bash/bash.html) (4.0)
  -  [awk](https://www.gnu.org/software/gawk/) (4.0.1)
  -  [paste](https://www.gnu.org/software/coreutils/coreutils.html) (8.21)
  -  [sort](https://www.gnu.org/software/coreutils/coreutils.html) (8.21)
+
+
+#### Optional
+
+If you plan to use the [MAFFT](http://mafft.cbrc.jp/alignment/software/) multiple sequence alignment algorithm, you must install it (versions v7.271 and v7.123b will work) and make the `mafft` command available on your [`PATH`](https://en.wikipedia.org/wiki/Search_path).
+
+The barcode error correction script `correct.py` depends on the [networkx](https://pypi.python.org/pypi/networkx) Python module (version 1.9, 1.10, or 1.11), the [bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/index.shtml) read mapper, and [samtools](http://samtools.sourceforge.net/). The commands `bowtie2`, `bowtie2-build`, and `samtools` must be on your `PATH`.
 
 
 ### Download
@@ -43,11 +47,12 @@ And standard unix tools:
 
 #### Via GitHub webpage
 
-Click the [releases](https://github.com/galaxyproject/dunovo/releases) tab at the top of this page, and find the latest release. Download the zip file (the "Source code (zip)" link), as well as `ET.zip` and `utillib.zip`. Extract the first zip file, then unzip the other two into the extracted directory and name those directories `ET` and `utillib`, respectively.
+Click the [releases](https://github.com/galaxyproject/dunovo/releases) tab at the top of this page, and find the latest release. Download the zip file (the "Source code (zip)" link), as well as `kalign.zip`, `utillib.zip`, and `ET.zip`. Extract the first zip file, then unzip the other three into the extracted directory and name those directories `kalign`, `utillib`, and `ET`, respectively.
 
 In the end, the organization and names of the three directories should look like this:
 
     dunovo
+    ├─╴kalign
     ├─╴utillib
     └─╴ET
 
@@ -56,14 +61,14 @@ In the end, the organization and names of the three directories should look like
     $ cd dunovo
     $ make
 
-The `make` command is needed to compile the C modules, which are required. You need to be in the root source directory (where the file `Makefile` is) before running the command.
+The `make` command is needed to compile the C modules and kalign, which are required. You need to be in the root source directory (where the file `Makefile` is) before running the command.
 
 
 ### Usage
 
 This example shows how to go from raw duplex sequencing data to the final duplex consensus sequences.
 
-Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts `align_families.py` and `dunovo.py` should be on your `PATH`. Also, in the following command, replace `make-barcodes.awk` with the actual path to that script (included in this pipeline).
+Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts `align_families.py`, `dunovo.py`, `baralign.sh`, and `correct.py` should be on your `PATH`. Also, in the following command, replace `make-barcodes.awk` with the actual path to that script (included in this pipeline).
 
 1. Sort the reads into families based on their barcodes and split the barcodes from the sequence.  
     ```bash
@@ -73,10 +78,18 @@ Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts
       | sort > families.tsv
     ```
 
-2. Do multiple sequence alignments of the read families.  
+2. (Optional) Correct errors in barcodes.
+    ```bash
+    $ baralign.sh families.tsv refdir barcodes.bam
+    $ samtools view -f 256 barcodes.bam \
+      | correct.py families.tsv refdir/barcodes.fa \
+      | sort > families.corrected.tsv
+    ```
+
+3. Do multiple sequence alignments of the read families.  
 `$ align_families.py families.tsv > families.msa.tsv`
 
-3. Build duplex consensus sequences from the aligned families.  
+4. Build duplex consensus sequences from the aligned families.  
 `$ dunovo.py families.msa.tsv -1 duplex_1.fa -2 duplex_2.fa`
 
 See all options for a given command by giving it the `-h` flag.
@@ -91,12 +104,24 @@ See all options for a given command by giving it the `-h` flag.
       | awk -f make-barcodes.awk \
       | sort > families.tsv
 
+
 This command pipeline will transform each pair of reads into a one-line record, split the 12bp barcodes off them, and sort by their combined barcode. The end result is a file (named `families.tsv` above) listing read pairs, grouped by barcode. See `make-barcodes.awk` for the details on the formation of the barcodes and the format.
 
 Note: This step requires your FASTQ files to have exactly 4 lines per read (no multi-line sequences). Also, in the output, the read sequence does not include the barcode or the 5bp constant sequence after it. You can customize the length of the barcode or constant sequence by setting the awk constants `TAG_LEN` and `INVARIANT` (i.e. `awk -v TAG_LEN=10 make-barcodes.awk`).
 
+#### 2. (Optional) Correct errors in barcodes.
 
-#### 2. Do multiple sequence alignments of the read families.  
+    $ baralign.sh families.tsv refdir barcodes.bam
+    $ samtools view -f 256 barcodes.bam \
+      | correct.py families.tsv refdir/barcodes.fa \
+      | sort > families.corrected.tsv
+
+These commands takes the `families.tsv` file produced in the previous step, "corrects"\* the barcodes in it, and outputs a new version of `families.tsv` with the new barcodes. It does this by aligning all barcodes to themselves, finding pairs of barcodes which differ by only a few edits. Grouping sets of related barcodes gives groups which are likely descended from the same original barcode, differing only because of PCR and/or sequencing errors. By default, only barcodes that differ by 1 edit are allowed. You can allow greater edit distances between barcodes with the `--dist` option to `correct.py`.
+
+\*"corrects" is in scare quotes because the algorithm isn't actually focused on finding the original barcode sequence. Its purpose is instead to find barcodes which are all descended from the same original barcode, but now have different sequences because of errors. It finds each group of related barcodes and replaces them with a single barcode, so that the following steps identify them as one family.
+
+
+#### 3. Do multiple sequence alignments of the read families.  
 
 `$ align_families.py families.tsv > families.msa.tsv`
 
@@ -105,7 +130,7 @@ This step aligns each family of reads, but it processes each strand separately. 
 By default, this uses the Kalign2 multiple sequence alignment algorithm. Use `-a mafft` to select MAFFT instead. Kalign2 is reccommended, as its results are of similar accuracy and it's 7-8x faster.
 
 
-#### 3. Build duplex consensus sequences from the aligned families.  
+#### 4. Build duplex consensus sequences from the aligned families.  
 
 `$ dunovo.py families.msa.tsv -1 duplex_1.fa -2 duplex_2.fa`
 
