@@ -4,7 +4,7 @@ This is a pipeline for processing of duplex sequencing data without the use of a
 
 The pipeline was designed for use with the duplex method described in [Kennedy *et al.* 2014](https://dx.doi.org/10.1038/nprot.2014.170), but the assumptions are relatively minimal, so you should be able to apply it to variants of the protocol.
 
-The majority of _Du Novo_ is released under a BSD license, except for some portions governed by the MIT license. See `LICENSE.txt` for details.
+Du Novo 2.0 is released under the GPLv2 license, except for some portions governed by the MIT license. See `LICENSE.txt` for details.
 
 
 ## Running _Du Novo_ from Galaxy
