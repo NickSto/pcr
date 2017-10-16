@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 from __future__ import division
+import os
 import sys
 import time
 import logging
 import argparse
+import functools
+import traceback
 import collections
 import multiprocessing
 import consensus
@@ -17,7 +20,8 @@ phone = shims.get_module_or_shim('ET.phone')
 
 SANGER_START = 33
 SOLEXA_START = 64
-USAGE = '$ %(prog)s [options] families.msa.tsv > duplex-consensuses.fa'
+USAGE = """$ %(prog)s [options] families.msa.tsv -1 duplexes_1.fa -2 duplexes_2.fa
+       $ cat families.msa.tsv | %(prog)s [options] -1 duplexes_1.fa -2 duplexes_2.fa"""
 DESCRIPTION = """Build consensus sequences from read aligned families. Prints duplex consensus \
 sequences in FASTA to stdout. The sequence ids are BARCODE.MATE, e.g. "CTCAGATAACATACCTTATATGCA.1", \
 where "BARCODE" is the input barcode, and "MATE" is "1" or "2" as an arbitrary designation of the \
@@ -90,8 +94,9 @@ def make_argparser():
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
               'version of the tool, the size of the input data, the time taken to process it, and '
-              'the IP address of the machine running it. No parameters or filenames are sent. All '
-              'the reporting and recording code is available at https://github.com/NickSto/ET.'))
+              'the IP address of the machine running it. No filenames are sent, and the only '
+              'parameter reported is the number of processes. All the reporting and recording code '
+              'is available at https://github.com/NickSto/ET.'))
   phoning.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
     help=wrap('Tell the script it\'s running on Galaxy. Currently this only affects data reported '
               'when phoning home.'))
@@ -106,8 +111,12 @@ def make_argparser():
   log.add_argument('-V', '--verbose', dest='volume', action='store_const', const=logging.INFO)
   log.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
   misc = parser.add_argument_group('Miscellaneous')
-  misc.add_argument('-p', '--processes', type=int, default=1,
-    help=wrap('Number of worker subprocesses to use. Default: %(default)s.'))
+  misc.add_argument('-p', '--processes', type=int, default=0,
+    help=wrap('Number of worker subprocesses to use. If 0, no subprocesses will be started and '
+              'everything will be done inside one process. Default: %(default)s.'))
+  misc.add_argument('--queue-size', type=int,
+    help=wrap('How long to go accumulating responses from worker subprocesses before dealing '
+              'with all of them. Default: 8 * the number of worker --processes.'))
   misc.add_argument('-v', '--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
   misc.add_argument('-h', '--help', action='store_true',
@@ -128,13 +137,29 @@ def main(argv):
   tone_down_logger()
 
   start_time = time.time()
+  # If the user requested, report back some data about the start of the run.
   if args.phone_home:
-    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
-                              test=args.test, fail='warn')
+    call = phone.Call(__file__, version.get_version(), platform=args.platform, test=args.test,
+                      fail='warn')
+    call.send_data('start')
+    if args.infile is sys.stdin:
+      data = {'stdin':True, 'input_size':None}
+    else:
+      data = {'stdin':False, 'input_size':os.path.getsize(args.infile.name)}
+    call.send_data('prelim', run_data=data)
 
   # Process and validate arguments.
-  if args.processes <= 0:
-    fail('Error: --processes must be greater than zero.')
+  if args.queue_size is None:
+    if args.processes == 0:
+      queue_size = 1
+    else:
+      queue_size = args.processes * 8
+  else:
+    queue_size = args.queue_size
+  if args.processes < 0:
+    fail('Error: --processes must be at least zero.')
+  if queue_size <= 0:
+    fail('Error: --queue-size must be greater than zero.')
   if args.qual_format == 'sanger':
     qual_thres = chr(args.qual + SANGER_START)
   elif args.qual_format == 'solexa':
@@ -154,8 +179,23 @@ def main(argv):
     'sscs': (None, args.sscs1, args.sscs2),
   }
 
-  # Open all the worker processes.
-  workers = open_workers(args.processes)
+  # Open a pool of worker processes, and a list to cache results in.
+  if args.processes == 0:
+    # If --processes is 0, don't actually parallelize. Do everything inside this process.
+    pool = FakePool()
+  else:
+    pool = multiprocessing.Pool(processes=args.processes)
+  results = []
+
+  # Bind static arguments to process_duplex() so you don't have to give them every time.
+  wrapped_fxn = functools.partial(
+    process_duplex,
+    incl_sscs=args.incl_sscs,
+    min_reads=args.min_reads,
+    cons_thres=args.cons_thres,
+    min_cons_reads=args.min_cons_reads,
+    qual_thres=qual_thres
+  )
 
   try:
 
@@ -189,9 +229,9 @@ def main(argv):
         # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
         if barcode is not None and (new_barcode or not (new_order and new_mate)):
           assert len(duplex) <= 2, duplex.keys()
-          results = delegate(workers, stats, duplex, barcode, args.incl_sscs, args.min_reads,
-                             args.cons_thres, args.min_cons_reads, qual_thres)
-          process_results(filehandles, stats, *results[1:])
+          results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
+          results = process_results(results, queue_size, filehandles, stats)
+          stats['duplexes'] += 1
           duplex = collections.OrderedDict()
         barcode = this_barcode
         order = this_order
@@ -203,27 +243,19 @@ def main(argv):
     # Process the last family.
     duplex[(order, mate)] = family
     assert len(duplex) <= 2, duplex.keys()
-    results = delegate(workers, stats, duplex, barcode, args.incl_sscs, args.min_reads,
-                       args.cons_thres, args.min_cons_reads, qual_thres)
-    process_results(filehandles, stats, *results[1:])
-    current_worker_i = results[0]
+    results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
+    results = process_results(results, queue_size, filehandles, stats)
+    stats['duplexes'] += 1
 
-    # Do one last loop through the workers, reading the remaining results and stopping them.
-    # Start at the worker after the last one processed by the previous loop.
-    start = current_worker_i + 1
-    for i in range(len(workers)):
-      worker_i = (start + i) % args.processes
-      worker = workers[worker_i]
-      results = worker['parent_pipe'].recv()
-      process_results(filehandles, stats, *results)
+    # Retrieve the remaining results.
+    logging.info('Flushing remaining results from worker processes..')
+    results = process_results(results, 0, filehandles, stats)
 
-  except Exception:
-    raise
   finally:
     # If the root process encounters an exception and doesn't tell the workers to stop, it will
     # hang forever.
-    for worker in workers:
-      worker['parent_pipe'].send(None)
+    pool.close()
+    pool.join()
     # Close all open filehandles.
     if args.infile is not sys.stdin:
       args.infile.close()
@@ -244,64 +276,55 @@ def main(argv):
     logging.info('{:0.3f}s per read, {:0.3f}s per run.'.format(per_read, per_run))
 
   if args.phone_home:
-    stats['consensus_time'] = stats['time']
-    del stats['time']
-    phone.send_end(__file__, version.get_version(), run_id, run_time, stats, platform=args.platform,
-                   test=args.test, fail='warn')
+    run_data = stats.copy()
+    run_data['consensus_time'] = run_data['time']
+    del run_data['time']
+    run_data['processes'] = args.processes
+    call.send_data('end', run_time=run_time, run_data=run_data)
 
 
-def tone_down_logger():
-  """Change the logging level names from all-caps to capitalized lowercase.
-  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
-  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
-    level_name = logging.getLevelName(level)
-    logging.addLevelName(level, level_name.capitalize())
+class FakePool(object):
+  """A dummy version of multiprocessing.Pool which isn't actually parallelized.
+  Use this instead of multiprocessing.Pool to do all work inside one process."""
+  def apply_async(self, fxn, args=[], kwargs={}):
+    result_data = fxn(*args, **kwargs)
+    return FakeResult(result_data)
+  def close(self):
+    pass
+  def join(self):
+    pass
 
 
-def open_workers(num_workers):
-  """Open the required number of worker processes."""
-  workers = []
-  for i in range(num_workers):
-    worker = open_worker()
-    workers.append(worker)
-  return workers
+class FakeResult(object):
+  """A dummy version of multiprocessing.pool.AsyncResult to hold a result from FakePool."""
+  def __init__(self, result_data, timeout=None):
+    self.result_data = result_data
+  def get(self):
+    return self.result_data
 
 
-def open_worker():
-  parent_pipe, child_pipe = multiprocessing.Pipe()
-  process = multiprocessing.Process(target=worker_function, args=(child_pipe,))
-  process.start()
-  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe}
-  return worker
-
-
-def delegate(workers, stats, *args):
-  worker_i = stats['duplexes'] % len(workers)
-  worker = workers[worker_i]
-  # Receive results from the last duplex the worker processed, if any.
-  dcs_str, sscs_strs, duplex_mate, run_stats = None, None, None, {}
-  if stats['duplexes'] >= len(workers):
-    dcs_str, sscs_strs, duplex_mate, run_stats = worker['parent_pipe'].recv()
-  stats['duplexes'] += 1
-  # Send in a new duplex to the worker.
-  worker['parent_pipe'].send(args)
-  return worker_i, dcs_str, sscs_strs, duplex_mate, run_stats
-
-
-#################### Worker processes ####################
-
-
-def worker_function(child_pipe):
-  """Worker loop: Receive data from parent, process it, and send back results."""
-  while True:
-    args = child_pipe.recv()
-    if args is None:
-      break
-    try:
-      child_pipe.send(process_duplex(*args))
-    except Exception:
-      child_pipe.send((None, None))
-      raise
+def with_context(fxn, *args, **kwargs):
+  """Execute fxn, adding child process' stack trace to any Exceptions that are raised.
+  When Exceptions are raised in a multiprocessing subprocess, the stack trace it gives ends where
+  you call .get() on the .apply_async() return value.
+  This adds the real stack trace to the Exception's message and re-raises it, so it gets printed
+  to stderr.
+  Usage:
+  To execute real_fxn(arg1, arg2) through this, do:
+    result = pool.apply_async(with_context, args=(real_fxn, arg1, arg2))
+  Note: This would be a decorator, but that doesn't work with multiprocessing.
+  Functions below the top-level of a module aren't picklable and so can't be passed through
+  a Queue to subprocesses:
+  https://stackoverflow.com/questions/8804830/python-multiprocessing-pickling-error/8805244#8805244
+  """
+  try:
+    return fxn(*args, **kwargs)
+  except Exception as exception:
+    tb = traceback.format_exc()
+    logging.exception(tb)
+    new_message = exception.args[0] + '\nIn child process:\n' + tb
+    exception.args = (new_message,)
+    raise exception
 
 
 def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5, min_cons_reads=0,
@@ -310,8 +333,7 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5
   # The code in the main loop ensures that "duplex" contains only reads belonging to one final
   # duplex consensus read: ab.1 and ba.2 reads OR ab.2 and ba.1 reads. (Of course, one half might
   # be missing).
-  logger = get_multi_logger()
-  logger.info('Starting duplex {}'.format(barcode))
+  logging.info('Starting duplex {}'.format(barcode))
   start = time.time()
   # Construct consensus sequences.
   sscss, dcs_seq, duplex_mate = make_consensuses(duplex, min_reads, cons_thres, min_cons_reads,
@@ -321,7 +343,7 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5
   dcs_str, sscs_strs = format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand)
   # Calculate run statistics.
   elapsed = time.time() - start
-  logger.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
+  logging.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
   if len(sscss) > 0:
     run_stats = {'time':elapsed, 'runs':1, 'reads':sum(reads_per_strand)}
   else:
@@ -346,9 +368,9 @@ def make_sscs(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
   sscss = []
   duplex_mate = None
   for (order, mate), family in duplex.items():
-    logging.info('\t{0}.{1}:'.format(order, mate))
-    for read in family:
-      logging.info('\t\t{name}\t{seq}'.format(**read))
+    # logging.info('\t{0}.{1}:'.format(order, mate))
+    # for read in family:
+    #   logging.info('\t\t{name}\t{seq}'.format(**read))
     nreads = len(family)
     if nreads < min_reads:
       continue
@@ -386,31 +408,27 @@ def format_consensus(seq, barcode, reads_per_strand):
   return '>{bar} {reads}\n{seq}\n'.format(bar=barcode, reads=reads_str, seq=seq)
 
 
-def process_results(filehandles, stats, dcs_str, sscs_strs, duplex_mate, run_stats):
-  if dcs_str is None and sscs_strs is None:
-    return
-  for key, value in run_stats.items():
-    stats[key] += value
-  if dcs_str and filehandles['dcs'][duplex_mate]:
-    filehandles['dcs'][duplex_mate].write(dcs_str)
-  for mate in (1, 2):
-    if sscs_strs[mate] and filehandles['sscs'][mate]:
-      filehandles['sscs'][mate].write(sscs_strs[mate])
+def process_results(results, queue_size, filehandles, stats):
+  if len(results) < queue_size:
+    return results
+  for result in results:
+    dcs_str, sscs_strs, duplex_mate, run_stats = result.get()
+    for key, value in run_stats.items():
+      stats[key] += value
+    if dcs_str and filehandles['dcs'][duplex_mate]:
+      filehandles['dcs'][duplex_mate].write(dcs_str)
+    for mate in (1, 2):
+      if sscs_strs[mate] and filehandles['sscs'][mate]:
+        filehandles['sscs'][mate].write(sscs_strs[mate])
+  return []
 
 
-def get_multi_logger():
-  # Get config info from root logger.
-  root_logger = logging.getLogger()
-  loglevel = root_logger.getEffectiveLevel()
-  stream = root_logger.handlers[0].stream
-  # Get a multiprocessing logger and configure it the same as the root logger.
-  logger = multiprocessing.get_logger()
-  logger.setLevel(loglevel)
-  if len(logger.handlers) > 0:
-    logger.handlers[0].stream = stream
-  else:
-    logger.addHandler(logging.StreamHandler(stream=stream))
-  return logger
+def tone_down_logger():
+  """Change the logging level names from all-caps to capitalized lowercase.
+  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
+  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
+    level_name = logging.getLevelName(level)
+    logging.addLevelName(level, level_name.capitalize())
 
 
 def fail(message):

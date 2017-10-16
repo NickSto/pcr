@@ -4,7 +4,7 @@ This is a pipeline for processing of duplex sequencing data without the use of a
 
 The pipeline was designed for use with the duplex method described in [Kennedy *et al.* 2014](https://dx.doi.org/10.1038/nprot.2014.170), but the assumptions are relatively minimal, so you should be able to apply it to variants of the protocol.
 
-The majority of _Du Novo_ is released under a BSD license, except for some portions governed by the MIT license. See `LICENSE.txt` for details.
+Du Novo 2.0 is released under the GPLv2 license, except for some portions governed by the MIT license. See `LICENSE.txt` for details.
 
 
 ## Running _Du Novo_ from Galaxy
@@ -102,6 +102,8 @@ Note: This step requires your FASTQ files to have exactly 4 lines per read (no m
 
 This step aligns each family of reads, but it processes each strand separately. It can be parallelized with the `-p` option.
 
+By default, this uses the Kalign2 multiple sequence alignment algorithm. Use `-a mafft` to select MAFFT instead. Kalign2 is reccommended, as its results are of similar accuracy and it's 7-8x faster.
+
 
 #### 3. Build duplex consensus sequences from the aligned families.  
 
@@ -119,3 +121,8 @@ The reads will be printed in two files, one per paired-end mate, with this namin
 `>{barcode} {# reads in strand 1 family}-{# reads in strand 2 family}`  
 e.g.  
 `>TTGCGCCAGGGCGAGGAAAATACT 8-13`
+
+
+### Known bugs
+
+Be aware that a [known bug](https://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool/1408476#1408476) in Python when using the [multiprocessing](https://docs.python.org/2/library/multiprocessing.html) module makes it impossible to kill a running process with the Ctrl+C keyboard command. So if you run `align_families.py` or `dunovo.py` in the foreground, you'll have to exit via Ctrl+Z to stop and background the job, then kill the process (e.g. with `$ kill %1`, if it's the only backgrounded job).

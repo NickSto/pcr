@@ -3,16 +3,17 @@ import importlib
 """Stub versions of optional submodules which may fail to clone."""
 
 
-class version(object):
+class Shim(object):
   def __init__(self):
     self.is_shim = True
+
+
+class version(Shim):
   def get_version(self):
     return None
 
 
-class simplewrap(object):
-  def __init__(self):
-    self.is_shim = True
+class simplewrap(Shim):
   class Wrapper(object):
     def __init__(self):
       self.width = 80
@@ -20,9 +21,7 @@ class simplewrap(object):
       return string
 
 
-class phone(object):
-  def __init__(self):
-    self.is_shim = True
+class phone(Shim):
   def send_start(script_path,
                  version,
                  domain=None,

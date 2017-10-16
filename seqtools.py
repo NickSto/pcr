@@ -60,8 +60,8 @@ def transfer_gaps_multi(seqs, aligned, gap_char_in='-', gap_char_out='-'):
   gap_char_in_c = ctypes.c_char(gap_char_in)
   gap_char_out_c = ctypes.c_char(gap_char_out)
   n_seqs = len(seqs)
-  assert n_seqs == len(aligned), ('Error: Unequal number of gapped and ungapped sequences ({} vs '
-                                  '{} sequences, respectively).'.format(len(aligned), n_seqs))
+  assert n_seqs == len(aligned), ('Unequal number of gapped and ungapped sequences ({} vs {} '
+                                  'sequences, respectively)'.format(len(aligned), n_seqs))
   seqs_c = (ctypes.c_char_p * n_seqs)()
   for i, seq in enumerate(seqs):
     seqs_c[i] = ctypes.c_char_p(seq)

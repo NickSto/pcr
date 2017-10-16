@@ -6,10 +6,12 @@ import time
 import logging
 import tempfile
 import argparse
+import functools
+import traceback
 import subprocess
 import collections
-import multiprocessing
 import distutils.spawn
+import multiprocessing
 import seqtools
 import shims
 # There can be problems with the submodules, but none are essential.
@@ -24,10 +26,9 @@ phone = shims.get_module_or_shim('ET.phone')
 #      to make, but it's not obvious that it happened. The pipeline won't fail, but will just
 #      produce pretty weird results.
 
-REQUIRED_COMMANDS = ['mafft']
-USAGE = '$ %(prog)s [options] families.tsv > families.msa.tsv'
+USAGE = """$ %(prog)s [options] families.tsv > families.msa.tsv
+       $ cat families.tsv | %(prog)s [options] > families.msa.tsv"""
 DESCRIPTION = """Read in sorted FASTQ data and do multiple sequence alignments of each family."""
-
 
 def make_argparser():
 
@@ -49,14 +50,22 @@ def make_argparser():
               '6. read 2 name\n'
               '7. read 2 sequence\n'
               '8. read 2 quality scores'))
-  parser.add_argument('-p', '--processes', type=int, default=1,
-    help=wrap('Number of worker subprocesses to use. Must be at least 1. Default: %(default)s.'))
+  parser.add_argument('-a', '--aligner', choices=('mafft', 'kalign'), default='kalign',
+    help=wrap('The multiple sequence aligner to use. Default: %(default)s'))
+  parser.add_argument('-p', '--processes', type=int, default=0,
+    help=wrap('Number of worker subprocesses to use. If 0, no subprocesses will be started and '
+              'everything will be done inside one process. Default: %(default)s.'))
+  parser.add_argument('--queue-size', type=int,
+    help=wrap('How long to go accumulating responses from worker subprocesses before dealing '
+              'with all of them. Default: 8 * the number of worker --processes.'))
   parser.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
               'version of the tool, the size of the input data, the time taken to process it, and '
-              'the IP address of the machine running it. No parameters or filenames are sent. All '
-              'the reporting and recording code is available at https://github.com/NickSto/ET.'))
+              'the IP address of the machine running it. No filenames are sent, and the only '
+              'parameters reported are --processes and --aligner, which are necessary to evaluate '
+              'performance. All the reporting and recording code is available at '
+              'https://github.com/NickSto/ET.'))
   parser.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
     help=wrap('Tell the script it\'s running on Galaxy. Currently this only affects data reported '
               'when phoning home.'))
@@ -65,7 +74,7 @@ def make_argparser():
   parser.add_argument('--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
   parser.add_argument('-L', '--log-file', type=argparse.FileType('w'), default=sys.stderr,
-    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+    help=wrap('Print log messages to this file instead of to stderr. NOTE: Will overwrite the file.'))
   parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
                       default=logging.WARNING)
   parser.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
@@ -83,25 +92,46 @@ def main(argv):
   tone_down_logger()
 
   start_time = time.time()
+  # If the user requested, report back some data about the start of the run.
   if args.phone_home:
-    run_id = phone.send_start(__file__, version.get_version(), platform=args.platform,
-                              test=args.test, fail='warn')
+    call = phone.Call(__file__, version.get_version(), platform=args.platform, test=args.test,
+                      fail='warn')
+    call.send_data('start')
+    if args.infile is sys.stdin:
+      data = {'stdin':True, 'input_size':None}
+    else:
+      data = {'stdin':False, 'input_size':os.path.getsize(args.infile.name)}
+    call.send_data('prelim', run_data=data)
 
-  assert args.processes > 0, '-p must be greater than zero'
+  if args.queue_size is None:
+    if args.processes == 0:
+      queue_size = 1
+    else:
+      queue_size = args.processes * 8
+  else:
+    queue_size = args.queue_size
+  if args.processes < 0:
+    fail('Error: --processes must be at least zero.')
+  if queue_size <= 0:
+    fail('Error: --queue-size must be greater than zero.')
 
-  # Check for required commands.
-  missing_commands = []
-  for command in REQUIRED_COMMANDS:
-    if not distutils.spawn.find_executable(command):
-      missing_commands.append(command)
-  if missing_commands:
-    fail('Error: Missing commands: "'+'", "'.join(missing_commands)+'".')
+  # If we're using mafft, check that we can execute it.
+  if args.aligner == 'mafft' and not distutils.spawn.find_executable('mafft'):
+    fail('Error: Could not find "mafft" command on $PATH.')
 
-  # Open all the worker processes.
-  workers = open_workers(args.processes)
+  # Open a pool of worker processes, and a list to cache results in.
+  if args.processes == 0:
+    # If --processes is 0, don't actually parallelize. Do everything inside this process.
+    pool = FakePool()
+  else:
+    pool = multiprocessing.Pool(processes=args.processes)
+  results = []
 
-  # Main loop.
-  """This processes whole duplexes (pairs of strands) at a time for a future option to align the
+  # Bind static arguments to process_duplex() so you don't have to give them every time.
+  wrapped_fxn = functools.partial(process_duplex, aligner=args.aligner)
+
+  """Main loop.
+  This processes whole duplexes (pairs of strands) at a time for a future option to align the
   whole duplex at a time.
   duplex data structure:
   duplex = {
@@ -115,57 +145,63 @@ def main(argv):
       },
       {'name1': 'read_name2a',
        ...
-      }
+      },
+      ...
+    ],
+    'ba': [
+      ...
     ]
   }
   e.g.:
-  seq = duplex[order][pair_num]['seq1']
-  """
-  stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
-  current_worker_i = 0
-  duplex = collections.OrderedDict()
-  family = []
-  barcode = None
-  order = None
-  for line in args.infile:
-    fields = line.rstrip('\r\n').split('\t')
-    if len(fields) != 8:
-      continue
-    (this_barcode, this_order, name1, seq1, qual1, name2, seq2, qual2) = fields
-    # If the barcode or order has changed, we're in a new family.
-    # Process the reads we've previously gathered as one family and start a new family.
-    if this_barcode != barcode or this_order != order:
-      duplex[order] = family
-      # If the barcode is different, we're at the end of the whole duplex. Process the it and start
-      # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
-      if this_barcode != barcode:
-        # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
-        #               '/'.join([str(len(duplex[o])) for o in duplex])))
-        output, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode)
-        process_results(output, run_stats, stats)
-        duplex = collections.OrderedDict()
-      barcode = this_barcode
-      order = this_order
-      family = []
-    pair = {'name1': name1, 'seq1':seq1, 'qual1':qual1, 'name2':name2, 'seq2':seq2, 'qual2':qual2}
-    family.append(pair)
-    stats['pairs'] += 1
-  # Process the last family.
-  duplex[order] = family
-  # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
-  #               '/'.join([str(len(duplex[o])) for o in duplex])))
-  output, run_stats, current_worker_i = delegate(workers, stats, duplex, barcode)
-  process_results(output, run_stats, stats)
+  seq = duplex[order][pair_num]['seq1']"""
+  try:
 
-  # Do one last loop through the workers, reading the remaining results and stopping them.
-  # Start at the worker after the last one processed by the previous loop.
-  start = current_worker_i + 1
-  for i in range(len(workers)):
-    worker_i = (start + i) % args.processes
-    worker = workers[worker_i]
-    output, run_stats = worker['parent_pipe'].recv()
-    process_results(output, run_stats, stats)
-    worker['parent_pipe'].send(None)
+    stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
+    duplex = collections.OrderedDict()
+    family = []
+    barcode = None
+    order = None
+    for line in args.infile:
+      fields = line.rstrip('\r\n').split('\t')
+      if len(fields) != 8:
+        continue
+      (this_barcode, this_order, name1, seq1, qual1, name2, seq2, qual2) = fields
+      # If the barcode or order has changed, we're in a new family.
+      # Process the reads we've previously gathered as one family and start a new family.
+      if this_barcode != barcode or this_order != order:
+        duplex[order] = family
+        # If the barcode is different, we're at the end of the whole duplex. Process the it and start
+        # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
+        if this_barcode != barcode:
+          # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
+          #               '/'.join([str(len(duplex[o])) for o in duplex])))
+          results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
+          results = process_results(results, queue_size, stats)
+          stats['duplexes'] += 1
+          duplex = collections.OrderedDict()
+        barcode = this_barcode
+        order = this_order
+        family = []
+      pair = {'name1': name1, 'seq1':seq1, 'qual1':qual1, 'name2':name2, 'seq2':seq2, 'qual2':qual2}
+      family.append(pair)
+      stats['pairs'] += 1
+    # Process the last family.
+    duplex[order] = family
+    # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
+    #               '/'.join([str(len(duplex[o])) for o in duplex])))
+    results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
+    results = process_results(results, queue_size, stats)
+    stats['duplexes'] += 1
+
+    # Retrieve the remaining results.
+    logging.info('Flushing remaining results from worker processes..')
+    process_results(results, 0, stats)
+
+  finally:
+    # If an exception occurs in the parent without stopping the child processes, this will hang.
+    # Make sure to kill the children in all cases.
+    pool.close()
+    pool.join()
 
   if args.infile is not sys.stdin:
     args.infile.close()
@@ -183,62 +219,59 @@ def main(argv):
   logging.error('in {}s total time.'.format(run_time))
 
   if args.phone_home:
-    stats['align_time'] = stats['time']
-    del stats['time']
-    phone.send_end(__file__, version.get_version(), run_id, run_time, stats, platform=args.platform,
-                   test=args.test, fail='warn')
+    run_data = stats.copy()
+    run_data['align_time'] = run_data['time']
+    del run_data['time']
+    run_data['processes'] = args.processes
+    run_data['aligner'] = args.aligner
+    call.send_data('end', run_time=run_time, run_data=run_data)
 
 
-def open_workers(num_workers):
-  """Open the required number of worker processes."""
-  workers = []
-  for i in range(num_workers):
-    worker = open_worker()
-    workers.append(worker)
-  return workers
+class FakePool(object):
+  """A dummy version of multiprocessing.Pool which isn't actually parallelized.
+  Use this instead of multiprocessing.Pool to do all work inside one process."""
+  def apply_async(self, fxn, args=[], kwargs={}):
+    result_data = fxn(*args, **kwargs)
+    return FakeResult(result_data)
+  def close(self):
+    pass
+  def join(self):
+    pass
 
 
-def open_worker():
-  parent_pipe, child_pipe = multiprocessing.Pipe()
-  process = multiprocessing.Process(target=worker_function, args=(child_pipe,))
-  process.start()
-  worker = {'process':process, 'parent_pipe':parent_pipe, 'child_pipe':child_pipe}
-  return worker
+class FakeResult(object):
+  """A dummy version of multiprocessing.pool.AsyncResult to hold a result from FakePool."""
+  def __init__(self, result_data, timeout=None):
+    self.result_data = result_data
+  def get(self):
+    return self.result_data
 
 
-def worker_function(child_pipe):
-  while True:
-    args = child_pipe.recv()
-    if args is None:
-      break
-    try:
-      child_pipe.send(process_duplex(*args))
-    except Exception:
-      child_pipe.send((None, None))
-      raise
+def with_context(fxn, *args, **kwargs):
+  """Execute fxn, adding child process' stack trace to any Exceptions that are raised.
+  When Exceptions are raised in a multiprocessing subprocess, the stack trace it gives ends where
+  you call .get() on the .apply_async() return value.
+  This adds the real stack trace to the Exception's message and re-raises it, so it gets printed
+  to stderr.
+  Usage:
+  To execute real_fxn(arg1, arg2) through this, do:
+    result = pool.apply_async(with_context, args=(real_fxn, arg1, arg2))
+  Note: This would be a decorator, but that doesn't work with multiprocessing.
+  Functions below the top-level of a module aren't picklable and so can't be passed through
+  a Queue to subprocesses:
+  https://stackoverflow.com/questions/8804830/python-multiprocessing-pickling-error/8805244#8805244
+  """
+  try:
+    return fxn(*args, **kwargs)
+  except Exception as exception:
+    tb = traceback.format_exc()
+    logging.exception(tb)
+    new_message = exception.args[0] + '\nIn child process:\n' + tb
+    exception.args = (new_message,)
+    raise exception
 
 
-def delegate(workers, stats, duplex, barcode):
-  worker_i = stats['duplexes'] % len(workers)
-  worker = workers[worker_i]
-  # Receive results from the last duplex the worker processed, if any.
-  if stats['duplexes'] >= len(workers):
-    output, run_stats = worker['parent_pipe'].recv()
-  else:
-    output, run_stats = '', {}
-  if output is None and run_stats is None:
-    logging.warning('Worker {} died.'.format(worker['process'].name))
-    worker = open_worker()
-    workers[worker_i] = worker
-    output, run_stats = '', {}
-  stats['duplexes'] += 1
-  # Send in a new duplex to the worker.
-  args = (duplex, barcode)
-  worker['parent_pipe'].send(args)
-  return output, run_stats, worker_i
-
-
-def process_duplex(duplex, barcode):
+def process_duplex(duplex, barcode, aligner='mafft'):
   output = ''
   run_stats = {'time':0, 'runs':0, 'aligned_pairs':0, 'failures':0}
   orders = duplex.keys()
@@ -252,19 +285,19 @@ def process_duplex(duplex, barcode):
     # strand1/mate1, strand2/mate2, strand1/mate2, strand2/mate1
     combos = ((1, orders[0]), (2, orders[1]), (2, orders[0]), (1, orders[1]))
   else:
-    raise AssertionError('Error: More than 2 orders in duplex {}: {}'.format(barcode, orders))
+    raise AssertionError('More than 2 orders in duplex {}: {}'.format(barcode, orders))
   for mate, order in combos:
     family = duplex[order]
     start = time.time()
     try:
-      alignment = align_family(family, mate)
+      alignment = align_family(family, mate, aligner=aligner)
     except AssertionError as error:
-      logging.critical('AssertionError on family {}, order {}, mate {}:\n{}.'
-                       .format(barcode, order, mate, error))
-      raise
+      context = '\n... on family {}, order {}, mate {}.'.format(barcode, order, mate)
+      error.args = (error.args[0]+context,)
+      raise error
     except (OSError, subprocess.CalledProcessError) as error:
       logging.warning('{} on family {}, order {}, mate {}:\n{}'
-                      .format(type(error).__name__, barcode, order, mate, error))
+                     .format(type(error).__name__, barcode, order, mate, error))
       alignment = None
     # Compile statistics.
     elapsed = time.time() - start
@@ -282,7 +315,7 @@ def process_duplex(duplex, barcode):
   return output, run_stats
 
 
-def align_family(family, mate):
+def align_family(family, mate, aligner='mafft'):
   """Do a multiple sequence alignment of the reads in a family and their quality scores."""
   mate = str(mate)
   assert mate == '1' or mate == '2'
@@ -290,26 +323,40 @@ def align_family(family, mate):
     return None
   elif len(family) == 1:
     # If there's only one read pair, there's no alignment to be done (and MAFFT won't accept it).
-    seq_alignment = [{'name':family[0]['name'+mate], 'seq':family[0]['seq'+mate]}]
+    aligned_seqs = [family[0]['seq'+mate]]
   else:
     # Do the multiple sequence alignment.
-    seq_alignment = make_msa(family, mate)
+    aligned_seqs = make_msa(family, mate, aligner=aligner)
   # Transfer the alignment to the quality scores.
-  ## Get a list of all sequences in the alignment (mafft output).
-  seqs = [read['seq'] for read in seq_alignment]
   ## Get a list of all quality scores in the family for this mate.
   quals_raw = [pair['qual'+mate] for pair in family]
-  qual_alignment = seqtools.transfer_gaps_multi(quals_raw, seqs, gap_char_out=' ')
+  qual_alignment = seqtools.transfer_gaps_multi(quals_raw, aligned_seqs, gap_char_out=' ')
   # Package them up in the output data structure.
   alignment = []
-  for aligned_seq, aligned_qual in zip(seq_alignment, qual_alignment):
-    alignment.append({'name':aligned_seq['name'], 'seq':aligned_seq['seq'], 'qual':aligned_qual})
+  for pair, aligned_seq, aligned_qual in zip(family, aligned_seqs, qual_alignment):
+    alignment.append({'name':pair['name'+mate], 'seq':aligned_seq, 'qual':aligned_qual})
   return alignment
 
 
-def make_msa(family, mate):
+def make_msa(family, mate, aligner='mafft'):
+  if aligner == 'mafft':
+    return make_msa_mafft(family, mate)
+  elif aligner == 'kalign':
+    return make_msa_kalign(family, mate)
+
+
+def make_msa_kalign(family, mate):
+  logging.info('Aligning with kalign.')
+  from kalign import kalign
+  seqs = [pair['seq'+mate] for pair in family]
+  aln_struct = kalign.align(seqs)
+  return [aln_struct.seqs[i] for i in range(aln_struct.nseqs)]
+
+
+def make_msa_mafft(family, mate):
   """Perform a multiple sequence alignment on a set of sequences and parse the result.
   Uses MAFFT."""
+  logging.info('Aligning with mafft.')
   #TODO: Replace with tempfile.mkstemp()?
   with tempfile.NamedTemporaryFile('w', delete=False, prefix='align.msa.') as family_file:
     for pair in family:
@@ -326,35 +373,24 @@ def make_msa(family, mate):
     finally:
       # Make sure we delete the temporary file.
       os.remove(family_file.name)
-  return read_fasta(output, is_file=False, upper=True)
+  return read_fasta(output)
 
 
-def read_fasta(fasta, is_file=True, upper=False):
+def read_fasta(fasta):
   """Quick and dirty FASTA parser. Return the sequences and their names.
-  Returns a list of sequences. Each is a dict of 'name' and 'seq'.
+  Returns a list of sequences.
   Warning: Reads the entire contents of the file into memory at once."""
   sequences = []
   sequence = ''
-  seq_name = None
-  if is_file:
-    with open(fasta) as fasta_file:
-      fasta_lines = fasta_file.readlines()
-  else:
-    fasta_lines = fasta.splitlines()
-  for line in fasta_lines:
+  for line in fasta.splitlines():
     if line.startswith('>'):
-      if upper:
-        sequence = sequence.upper()
       if sequence:
-        sequences.append({'name':seq_name, 'seq':sequence})
+        sequences.append(sequence.upper())
       sequence = ''
-      seq_name = line.rstrip('\r\n')[1:]
       continue
     sequence += line.strip()
-  if upper:
-    sequence = sequence.upper()
   if sequence:
-    sequences.append({'name':seq_name, 'seq':sequence})
+    sequences.append(sequence.upper())
   return sequences
 
 
@@ -366,13 +402,18 @@ def format_msa(align, barcode, order, mate, outfile=sys.stdout):
   return output
 
 
-def process_results(output, run_stats, stats):
+def process_results(results, queue_size, stats):
   """Process the outcome of a duplex run.
   Print the aligned output and sum the stats from the run with the running totals."""
-  for key, value in run_stats.items():
-    stats[key] += value
-  if output:
-    sys.stdout.write(output)
+  if len(results) < queue_size:
+    return results
+  for result in results:
+    output, run_stats = result.get()
+    for key, value in run_stats.items():
+      stats[key] += value
+    if output:
+      sys.stdout.write(output)
+  return []
 
 
 def tone_down_logger():
