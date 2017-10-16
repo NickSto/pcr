@@ -102,6 +102,8 @@ Note: This step requires your FASTQ files to have exactly 4 lines per read (no m
 
 This step aligns each family of reads, but it processes each strand separately. It can be parallelized with the `-p` option.
 
+By default, this uses the Kalign2 multiple sequence alignment algorithm. Use `-a mafft` to select MAFFT instead. Kalign2 is reccommended, as its results are of similar accuracy and it's 7-8x faster.
+
 
 #### 3. Build duplex consensus sequences from the aligned families.  
 
