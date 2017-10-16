@@ -11,7 +11,7 @@ USAGE="Usage: \$ $(basename $0) [options] [test1 [test2]]"
 
 function main {
 
-  do_all=true
+  gave_tests=
   verbose=true
   # Run the requested tests
   for arg in "$@"; do
@@ -37,7 +37,7 @@ function main {
     fi
     # Execute valid tests (if they're existing functions).
     if [[ $(type -t $arg) == function ]]; then
-      do_all=''
+      gave_tests=true
       if [[ $verbose ]]; then
         $arg
       else
@@ -45,17 +45,12 @@ function main {
       fi
     else
       echo "Unrecognized test \"$arg\"." >&2
-      do_all=''
     fi
   done
 
   # If no tests were specified in arguments, do all tests.
-  if [[ $do_all ]]; then
-    if [[ $verbose ]]; then
-      all
-    else
-      all 2>/dev/null
-    fi
+  if ! [[ $gave_tests ]]; then
+    fail "Error: Please specify a valid test to run (or \"all\" to run all of them)."
   fi
 }
 
@@ -142,7 +137,7 @@ function align {
 
 # align_families.py with 3 processes
 function align_p3 {
-  echo -e "\talign_families.py ::: families.sort.tsv:"
+  echo -e "\talign_families.py -p 3 ::: families.sort.tsv:"
   python "$dirname/../align_families.py" -q -p 3 "$dirname/families.sort.tsv" | diff -s - "$dirname/families.msa.tsv"
 }
 
