@@ -23,11 +23,10 @@ class FakeResult(object):
 
 
 def with_context(fxn, *args, **kwargs):
-  """Execute fxn, adding child process' stack trace to any Exceptions that are raised.
+  """Execute fxn, logging child process' stack trace for any Exceptions that are raised.
   When Exceptions are raised in a multiprocessing subprocess, the stack trace it gives ends where
   you call .get() on the .apply_async() return value.
-  This adds the real stack trace to the Exception's message and re-raises it, so it gets printed
-  to stderr.
+  This logs the real stack trace and re-raises it.
   Usage:
   To execute real_fxn(arg1, arg2) through this, do:
     result = pool.apply_async(with_context, args=(real_fxn, arg1, arg2))
@@ -41,6 +40,4 @@ def with_context(fxn, *args, **kwargs):
   except Exception as exception:
     tb = traceback.format_exc()
     logging.exception(tb)
-    new_message = exception.args[0] + '\nIn child process:\n' + tb
-    exception.args = (new_message,)
     raise exception
