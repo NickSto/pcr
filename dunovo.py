@@ -338,7 +338,8 @@ def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5
   # Construct consensus sequences.
   sscss, dcs_seq, duplex_mate = make_consensuses(duplex, min_reads, cons_thres, min_cons_reads,
                                                  qual_thres)
-  reads_per_strand = [sscs['reads'] for sscs in sscss]
+  reads_per_strand = [sscs['nreads'] for sscs in sscss]
+
   # Format output.
   dcs_str, sscs_strs = format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand)
   # Calculate run statistics.
@@ -357,7 +358,7 @@ def make_consensuses(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
   # Make DCS, if possible.
   dcs_seq = None
   if len(sscss) == 2:
-    align = swalign.smith_waterman(sscss[0]['consensus'], sscss[1]['consensus'])
+    align = swalign.smith_waterman(sscss[0]['seq'], sscss[1]['seq'])
     #TODO: log error & return if len(align.target) != len(align.query)
     dcs_seq = consensus.build_consensus_duplex_simple(align.target, align.query)
   return sscss, dcs_seq, duplex_mate
@@ -385,7 +386,7 @@ def make_sscs(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
     quals = [read['qual'] for read in family]
     consensus_seq = consensus.get_consensus(seqs, quals, cons_thres=cons_thres,
                                             min_reads=min_cons_reads, qual_thres=qual_thres)
-    sscss.append({'consensus':consensus_seq, 'order':order, 'mate':mate, 'reads':nreads})
+    sscss.append({'seq':consensus_seq, 'order':order, 'mate':mate, 'nreads':nreads})
   return sscss, duplex_mate
 
 
@@ -393,19 +394,19 @@ def format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand):
   # SSCS
   sscs_strs = [None, None, None]
   for sscs in sscss:
-    sscs_strs[sscs['mate']] = '>{0}.{order} {reads}\n{consensus}\n'.format(barcode, **sscs)
+    sscs_strs[sscs['mate']] = '>{0}.{order} {nreads}\n{seq}\n'.format(barcode, **sscs)
   # DCS
   dcs_str = ''
   if dcs_seq:
     dcs_str = format_consensus(dcs_seq, barcode, reads_per_strand)
   elif incl_sscs and sscss:
-    dcs_str = format_consensus(sscss[0]['consensus'], barcode, reads_per_strand)
+    dcs_str = format_consensus(sscss[0]['seq'], barcode, reads_per_strand)
   return dcs_str, sscs_strs
 
 
 def format_consensus(seq, barcode, reads_per_strand):
-  reads_str = '-'.join(map(str, reads_per_strand))
-  return '>{bar} {reads}\n{seq}\n'.format(bar=barcode, reads=reads_str, seq=seq)
+  nreads_str = '-'.join(map(str, reads_per_strand))
+  return '>{bar} {nreads}\n{seq}\n'.format(bar=barcode, nreads=nreads_str, seq=seq)
 
 
 def process_results(results, queue_size, filehandles, stats):
