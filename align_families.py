@@ -12,6 +12,7 @@ import subprocess
 import collections
 import distutils.spawn
 import multiprocessing
+import parallel_tools
 import seqtools
 import shims
 # There can be problems with the submodules, but none are essential.
@@ -122,7 +123,7 @@ def main(argv):
   # Open a pool of worker processes, and a list to cache results in.
   if args.processes == 0:
     # If --processes is 0, don't actually parallelize. Do everything inside this process.
-    pool = FakePool()
+    pool = parallel_tools.FakePool()
   else:
     pool = multiprocessing.Pool(processes=args.processes)
   results = []
@@ -175,7 +176,7 @@ def main(argv):
         if this_barcode != barcode:
           # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
           #               '/'.join([str(len(duplex[o])) for o in duplex])))
-          results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
+          results.append(pool.apply_async(parallel_tools.with_context, args=(wrapped_fxn, duplex, barcode)))
           results = process_results(results, queue_size, stats)
           stats['duplexes'] += 1
           duplex = collections.OrderedDict()
@@ -189,7 +190,7 @@ def main(argv):
     duplex[order] = family
     # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
     #               '/'.join([str(len(duplex[o])) for o in duplex])))
-    results.append(pool.apply_async(with_context, args=(wrapped_fxn, duplex, barcode)))
+    results.append(pool.apply_async(parallel_tools.with_context, args=(wrapped_fxn, duplex, barcode)))
     results = process_results(results, queue_size, stats)
     stats['duplexes'] += 1
 
@@ -225,50 +226,6 @@ def main(argv):
     run_data['processes'] = args.processes
     run_data['aligner'] = args.aligner
     call.send_data('end', run_time=run_time, run_data=run_data)
-
-
-class FakePool(object):
-  """A dummy version of multiprocessing.Pool which isn't actually parallelized.
-  Use this instead of multiprocessing.Pool to do all work inside one process."""
-  def apply_async(self, fxn, args=[], kwargs={}):
-    result_data = fxn(*args, **kwargs)
-    return FakeResult(result_data)
-  def close(self):
-    pass
-  def join(self):
-    pass
-
-
-class FakeResult(object):
-  """A dummy version of multiprocessing.pool.AsyncResult to hold a result from FakePool."""
-  def __init__(self, result_data, timeout=None):
-    self.result_data = result_data
-  def get(self):
-    return self.result_data
-
-
-def with_context(fxn, *args, **kwargs):
-  """Execute fxn, adding child process' stack trace to any Exceptions that are raised.
-  When Exceptions are raised in a multiprocessing subprocess, the stack trace it gives ends where
-  you call .get() on the .apply_async() return value.
-  This adds the real stack trace to the Exception's message and re-raises it, so it gets printed
-  to stderr.
-  Usage:
-  To execute real_fxn(arg1, arg2) through this, do:
-    result = pool.apply_async(with_context, args=(real_fxn, arg1, arg2))
-  Note: This would be a decorator, but that doesn't work with multiprocessing.
-  Functions below the top-level of a module aren't picklable and so can't be passed through
-  a Queue to subprocesses:
-  https://stackoverflow.com/questions/8804830/python-multiprocessing-pickling-error/8805244#8805244
-  """
-  try:
-    return fxn(*args, **kwargs)
-  except Exception as exception:
-    tb = traceback.format_exc()
-    logging.exception(tb)
-    new_message = exception.args[0] + '\nIn child process:\n' + tb
-    exception.args = (new_message,)
-    raise exception
 
 
 def process_duplex(duplex, barcode, aligner='mafft'):
