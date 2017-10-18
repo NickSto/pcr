@@ -7,7 +7,6 @@ import logging
 import tempfile
 import argparse
 import functools
-import traceback
 import subprocess
 import collections
 import distutils.spawn
@@ -254,7 +253,7 @@ def process_duplex(duplex, barcode, aligner='mafft'):
       raise error
     except (OSError, subprocess.CalledProcessError) as error:
       logging.warning('{} on family {}, order {}, mate {}:\n{}'
-                     .format(type(error).__name__, barcode, order, mate, error))
+                      .format(type(error).__name__, barcode, order, mate, error))
       alignment = None
     # Compile statistics.
     elapsed = time.time() - start

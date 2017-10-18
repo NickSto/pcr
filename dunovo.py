@@ -6,7 +6,6 @@ import time
 import logging
 import argparse
 import functools
-import traceback
 import collections
 import multiprocessing
 import parallel_tools
