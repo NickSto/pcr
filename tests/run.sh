@@ -141,6 +141,11 @@ function align_p3 {
   python "$dirname/../align_families.py" -q -p 3 "$dirname/families.sort.tsv" | diff -s - "$dirname/families.msa.tsv"
 }
 
+function align_smoke {
+  echo -e "\talign_families.py ::: smoke.families.tsv:"
+  python "$dirname/../align_families.py" -q "$dirname/smoke.families.tsv" | diff -s - "$dirname/smoke.families.aligned.tsv"
+}
+
 # dunovo.py defaults on toy data
 function dunovo {
   _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa families.dcs_2.fa
