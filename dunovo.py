@@ -5,9 +5,7 @@ import sys
 import time
 import logging
 import argparse
-import functools
 import collections
-import multiprocessing
 import parallel_tools
 import consensus
 import swalign
@@ -179,27 +177,24 @@ def main(argv):
     'sscs': (None, args.sscs1, args.sscs2),
   }
 
-  # Open a pool of worker processes, and a list to cache results in.
-  if args.processes == 0:
-    # If --processes is 0, don't actually parallelize. Do everything inside this process.
-    pool = parallel_tools.FakePool()
-  else:
-    pool = multiprocessing.Pool(processes=args.processes)
-  results = []
-
-  # Bind static arguments to process_duplex() so you don't have to give them every time.
-  wrapped_fxn = functools.partial(
-    process_duplex,
-    incl_sscs=args.incl_sscs,
-    min_reads=args.min_reads,
-    cons_thres=args.cons_thres,
-    min_cons_reads=args.min_cons_reads,
-    qual_thres=qual_thres
-  )
+  # Open a pool of worker processes.
+  stats = {'time':0, 'reads':0, 'runs':0, 'duplexes':0}
+  static_kwargs = {
+    'incl_sscs': args.incl_sscs,
+    'min_reads': args.min_reads,
+    'cons_thres': args.cons_thres,
+    'min_cons_reads': args.min_cons_reads,
+    'qual_thres': qual_thres,
+  }
+  pool = parallel_tools.SyncAsyncPool(process_duplex,
+                                      processes=args.processes,
+                                      static_kwargs=static_kwargs,
+                                      queue_size=queue_size,
+                                      callback=process_result,
+                                      callback_args=[filehandles, stats],
+                                     )
 
   try:
-
-    stats = {'time':0, 'reads':0, 'runs':0, 'duplexes':0}
     all_reads = 0
     duplex = collections.OrderedDict()
     family = []
@@ -229,8 +224,7 @@ def main(argv):
         # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
         if barcode is not None and (new_barcode or not (new_order and new_mate)):
           assert len(duplex) <= 2, duplex.keys()
-          results.append(pool.apply_async(parallel_tools.with_context, args=(wrapped_fxn, duplex, barcode)))
-          results = process_results(results, queue_size, filehandles, stats)
+          pool.compute(duplex, barcode)
           stats['duplexes'] += 1
           duplex = collections.OrderedDict()
         barcode = this_barcode
@@ -243,13 +237,12 @@ def main(argv):
     # Process the last family.
     duplex[(order, mate)] = family
     assert len(duplex) <= 2, duplex.keys()
-    results.append(pool.apply_async(parallel_tools.with_context, args=(wrapped_fxn, duplex, barcode)))
-    results = process_results(results, queue_size, filehandles, stats)
+    pool.compute(duplex, barcode)
     stats['duplexes'] += 1
 
     # Retrieve the remaining results.
     logging.info('Flushing remaining results from worker processes..')
-    results = process_results(results, 0, filehandles, stats)
+    pool.flush()
 
   finally:
     # If the root process encounters an exception and doesn't tell the workers to stop, it will
@@ -283,7 +276,7 @@ def main(argv):
     call.send_data('end', run_time=run_time, run_data=run_data)
 
 
-def process_duplex(duplex, barcode, incl_sscs=False, min_reads=1, cons_thres=0.5, min_cons_reads=0,
+def process_duplex(duplex, barcode, incl_sscs=False, min_reads=3, cons_thres=0.5, min_cons_reads=0,
                    qual_thres=' '):
   """Create one duplex consensus sequence from a pair of single-stranded families."""
   # The code in the main loop ensures that "duplex" contains only reads belonging to one final
@@ -325,9 +318,6 @@ def make_sscs(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
   sscss = []
   duplex_mate = None
   for (order, mate), family in duplex.items():
-    # logging.info('\t{0}.{1}:'.format(order, mate))
-    # for read in family:
-    #   logging.info('\t\t{name}\t{seq}'.format(**read))
     nreads = len(family)
     if nreads < min_reads:
       continue
@@ -365,19 +355,15 @@ def format_consensus(seq, barcode, reads_per_strand):
   return '>{bar} {nreads}\n{seq}\n'.format(bar=barcode, nreads=nreads_str, seq=seq)
 
 
-def process_results(results, queue_size, filehandles, stats):
-  if len(results) < queue_size:
-    return results
-  for result in results:
-    dcs_str, sscs_strs, duplex_mate, run_stats = result.get()
-    for key, value in run_stats.items():
-      stats[key] += value
-    if dcs_str and filehandles['dcs'][duplex_mate]:
-      filehandles['dcs'][duplex_mate].write(dcs_str)
-    for mate in (1, 2):
-      if sscs_strs[mate] and filehandles['sscs'][mate]:
-        filehandles['sscs'][mate].write(sscs_strs[mate])
-  return []
+def process_result(result, filehandles, stats):
+  dcs_str, sscs_strs, duplex_mate, run_stats = result
+  for key, value in run_stats.items():
+    stats[key] += value
+  if dcs_str and filehandles['dcs'][duplex_mate]:
+    filehandles['dcs'][duplex_mate].write(dcs_str)
+  for mate in (1, 2):
+    if sscs_strs[mate] and filehandles['sscs'][mate]:
+      filehandles['sscs'][mate].write(sscs_strs[mate])
 
 
 def tone_down_logger():

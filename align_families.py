@@ -6,11 +6,9 @@ import time
 import logging
 import tempfile
 import argparse
-import functools
 import subprocess
 import collections
 import distutils.spawn
-import multiprocessing
 import parallel_tools
 import seqtools
 import shims
@@ -119,18 +117,17 @@ def main(argv):
   if args.aligner == 'mafft' and not distutils.spawn.find_executable('mafft'):
     fail('Error: Could not find "mafft" command on $PATH.')
 
-  # Open a pool of worker processes, and a list to cache results in.
-  if args.processes == 0:
-    # If --processes is 0, don't actually parallelize. Do everything inside this process.
-    pool = parallel_tools.FakePool()
-  else:
-    pool = multiprocessing.Pool(processes=args.processes)
-  results = []
+  # Open a pool of worker processes.
+  stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
+  pool = parallel_tools.SyncAsyncPool(process_duplex,
+                                      processes=args.processes,
+                                      static_kwargs={'aligner':args.aligner},
+                                      queue_size=queue_size,
+                                      callback=process_result,
+                                      callback_args=[stats],
+                                     )
 
-  # Bind static arguments to process_duplex() so you don't have to give them every time.
-  wrapped_fxn = functools.partial(process_duplex, aligner=args.aligner)
-
-  """Main loop.
+  """Now the main loop.
   This processes whole duplexes (pairs of strands) at a time for a future option to align the
   whole duplex at a time.
   duplex data structure:
@@ -154,9 +151,8 @@ def main(argv):
   }
   e.g.:
   seq = duplex[order][pair_num]['seq1']"""
-  try:
 
-    stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
+  try:
     duplex = collections.OrderedDict()
     family = []
     barcode = None
@@ -175,8 +171,7 @@ def main(argv):
         if this_barcode != barcode:
           # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
           #               '/'.join([str(len(duplex[o])) for o in duplex])))
-          results.append(pool.apply_async(parallel_tools.with_context, args=(wrapped_fxn, duplex, barcode)))
-          results = process_results(results, queue_size, stats)
+          pool.compute(duplex, barcode)
           stats['duplexes'] += 1
           duplex = collections.OrderedDict()
         barcode = this_barcode
@@ -189,13 +184,12 @@ def main(argv):
     duplex[order] = family
     # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
     #               '/'.join([str(len(duplex[o])) for o in duplex])))
-    results.append(pool.apply_async(parallel_tools.with_context, args=(wrapped_fxn, duplex, barcode)))
-    results = process_results(results, queue_size, stats)
+    pool.compute(duplex, barcode)
     stats['duplexes'] += 1
 
     # Retrieve the remaining results.
     logging.info('Flushing remaining results from worker processes..')
-    process_results(results, 0, stats)
+    pool.flush()
 
   finally:
     # If an exception occurs in the parent without stopping the child processes, this will hang.
@@ -358,18 +352,14 @@ def format_msa(align, barcode, order, mate, outfile=sys.stdout):
   return output
 
 
-def process_results(results, queue_size, stats):
+def process_result(result, stats):
   """Process the outcome of a duplex run.
   Print the aligned output and sum the stats from the run with the running totals."""
-  if len(results) < queue_size:
-    return results
-  for result in results:
-    output, run_stats = result.get()
-    for key, value in run_stats.items():
-      stats[key] += value
-    if output:
-      sys.stdout.write(output)
-  return []
+  output, run_stats = result
+  for key, value in run_stats.items():
+    stats[key] += value
+  if output:
+    sys.stdout.write(output)
 
 
 def tone_down_logger():
