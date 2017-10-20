@@ -2,6 +2,8 @@ import logging
 import traceback
 import multiprocessing.pool
 
+QUEUE_SIZE_MULTIPLIER = 8
+
 
 class SyncAsyncPool(multiprocessing.pool.Pool):
   """A wrapper around multiprocessing.Pool which allows parallel processing but ordered results.
@@ -11,9 +13,7 @@ class SyncAsyncPool(multiprocessing.pool.Pool):
   the inputs were given. It does this by chunking the jobs, periodically stopping to wait for all
   jobs in the chunk to finish.
   It allows giving a callback which will be executed in the parent process. It will also be given
-  results in the same order they were submitted.
-  If processes == 0, no parallelization will be done and no child processes will be created.
-  Instead, the function will be executed in the main process."""
+  results in the same order they were submitted."""
 
   def __init__(self,
                function,
@@ -24,12 +24,26 @@ class SyncAsyncPool(multiprocessing.pool.Pool):
                callback=None,
                callback_args=()
               ):
-    # Validate processes argument.
+    """Create a new SyncAsyncPool.
+    processes can be None, "auto", an integer 0 or greater, or something that produces an integer
+      >= 0 when converted with int(). None or "auto" mean to use as many subprocesses as there are
+      cpu cores (reported by multiprocessing.cpu_count()). 0 means don't use any subprocesses. It
+      will execute the function directly in the main process (and won't actually create a
+      multiprocessing.Pool).
+    queue_size can be None or an integer greater than 0. If it's None, the queue_size will be set
+      to QUEUE_SIZE_MULTIPLIER * the number of processes."""
+    # Validate arguments.
     if processes is not None and processes != 'auto':
-      if not isinstance(processes, int):
+      try:
+        processes = int(processes)
+      except (ValueError, TypeError):
         raise ValueError('processes must be an integer, None, or "auto" (received {!r})'.format(processes))
       if processes < 0:
         raise ValueError('processes must be 0 or greater (received {!r})'.format(processes))
+    if processes == 'auto':
+      processes = None
+    if queue_size is not None and queue_size <= 0:
+      raise ValueError('queue_size must be > 0 (received {!r})'.format(queue_size))
     # Are we actually doing multiprocessing, or should we do everything directly in one process?
     if processes == 0:
       self.multiproc = False
@@ -49,7 +63,7 @@ class SyncAsyncPool(multiprocessing.pool.Pool):
       if self.processes == 0:
         queue_size = 1
       else:
-        queue_size = self.processes * 8
+        queue_size = self.processes * QUEUE_SIZE_MULTIPLIER
     self.queue_size = queue_size
     self.function = function
     self.static_args = list(static_args)

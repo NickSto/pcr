@@ -50,20 +50,22 @@ def make_argparser():
               '8. read 2 quality scores'))
   parser.add_argument('-a', '--aligner', choices=('mafft', 'kalign'), default='kalign',
     help=wrap('The multiple sequence aligner to use. Default: %(default)s'))
-  parser.add_argument('-p', '--processes', type=int, default=0,
+  parser.add_argument('-p', '--processes', default=0,
     help=wrap('Number of worker subprocesses to use. If 0, no subprocesses will be started and '
-              'everything will be done inside one process. Default: %(default)s.'))
+              'everything will be done inside one process. Give "auto" to use as many processes '
+              'as there are CPU cores. Default: %(default)s.'))
   parser.add_argument('--queue-size', type=int,
     help=wrap('How long to go accumulating responses from worker subprocesses before dealing '
-              'with all of them. Default: 8 * the number of worker --processes.'))
+              'with all of them. Default: {} * the number of worker --processes.'
+              .format(parallel_tools.QUEUE_SIZE_MULTIPLIER)))
   parser.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
               'version of the tool, the size of the input data, the time taken to process it, and '
               'the IP address of the machine running it. No filenames are sent, and the only '
-              'parameters reported are --processes and --aligner, which are necessary to evaluate '
-              'performance. All the reporting and recording code is available at '
-              'https://github.com/NickSto/ET.'))
+              'parameters reported are --aligner, --processes, and --queue-size, which are '
+              'necessary to evaluate performance. All the reporting and recording code is '
+              'available at https://github.com/NickSto/ET.'))
   parser.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
     help=wrap('Tell the script it\'s running on Galaxy. Currently this only affects data reported '
               'when phoning home.'))
@@ -101,16 +103,7 @@ def main(argv):
       data = {'stdin':False, 'input_size':os.path.getsize(args.infile.name)}
     call.send_data('prelim', run_data=data)
 
-  if args.queue_size is None:
-    if args.processes == 0:
-      queue_size = 1
-    else:
-      queue_size = args.processes * 8
-  else:
-    queue_size = args.queue_size
-  if args.processes < 0:
-    fail('Error: --processes must be at least zero.')
-  if queue_size <= 0:
+  if args.queue_size is not None and args.queue_size <= 0:
     fail('Error: --queue-size must be greater than zero.')
 
   # If we're using mafft, check that we can execute it.
@@ -122,7 +115,7 @@ def main(argv):
   pool = parallel_tools.SyncAsyncPool(process_duplex,
                                       processes=args.processes,
                                       static_kwargs={'aligner':args.aligner},
-                                      queue_size=queue_size,
+                                      queue_size=args.queue_size,
                                       callback=process_result,
                                       callback_args=[stats],
                                      )
@@ -216,7 +209,8 @@ def main(argv):
     run_data = stats.copy()
     run_data['align_time'] = run_data['time']
     del run_data['time']
-    run_data['processes'] = args.processes
+    run_data['processes'] = pool.processes
+    run_data['queue_size'] = pool.queue_size
     run_data['aligner'] = args.aligner
     call.send_data('end', run_time=run_time, run_data=run_data)
 

@@ -93,8 +93,8 @@ def make_argparser():
               'performance of the tool. The only data which will be recorded is the name and '
               'version of the tool, the size of the input data, the time taken to process it, and '
               'the IP address of the machine running it. No filenames are sent, and the only '
-              'parameter reported is the number of processes. All the reporting and recording code '
-              'is available at https://github.com/NickSto/ET.'))
+              'parameters reported are the number of --processes and the --queue-size. All the '
+              'reporting and recording code is available at https://github.com/NickSto/ET.'))
   phoning.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
     help=wrap('Tell the script it\'s running on Galaxy. Currently this only affects data reported '
               'when phoning home.'))
@@ -105,16 +105,18 @@ def make_argparser():
     help=wrap('Print log messages to this file instead of to stderr. Warning: Will overwrite the '
               'file.'))
   log.add_argument('-Q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
-                      default=logging.WARNING)
+                   default=logging.WARNING)
   log.add_argument('-V', '--verbose', dest='volume', action='store_const', const=logging.INFO)
   log.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
   misc = parser.add_argument_group('Miscellaneous')
-  misc.add_argument('-p', '--processes', type=int, default=0,
+  misc.add_argument('-p', '--processes', default=0,
     help=wrap('Number of worker subprocesses to use. If 0, no subprocesses will be started and '
-              'everything will be done inside one process. Default: %(default)s.'))
+              'everything will be done inside one process. Give "auto" to use as many processes '
+              'as there are CPU cores. Default: %(default)s.'))
   misc.add_argument('--queue-size', type=int,
     help=wrap('How long to go accumulating responses from worker subprocesses before dealing '
-              'with all of them. Default: 8 * the number of worker --processes.'))
+              'with all of them. Default: {} * the number of worker --processes.'
+              .format(parallel_tools.QUEUE_SIZE_MULTIPLIER)))
   misc.add_argument('-v', '--version', action='version', version=str(version.get_version()),
     help=wrap('Print the version number and exit.'))
   misc.add_argument('-h', '--help', action='store_true',
@@ -147,16 +149,7 @@ def main(argv):
     call.send_data('prelim', run_data=data)
 
   # Process and validate arguments.
-  if args.queue_size is None:
-    if args.processes == 0:
-      queue_size = 1
-    else:
-      queue_size = args.processes * 8
-  else:
-    queue_size = args.queue_size
-  if args.processes < 0:
-    fail('Error: --processes must be at least zero.')
-  if queue_size <= 0:
+  if args.queue_size is not None and args.queue_size <= 0:
     fail('Error: --queue-size must be greater than zero.')
   if args.qual_format == 'sanger':
     qual_thres = chr(args.qual + SANGER_START)
@@ -189,7 +182,7 @@ def main(argv):
   pool = parallel_tools.SyncAsyncPool(process_duplex,
                                       processes=args.processes,
                                       static_kwargs=static_kwargs,
-                                      queue_size=queue_size,
+                                      queue_size=args.queue_size,
                                       callback=process_result,
                                       callback_args=[filehandles, stats],
                                      )
@@ -272,7 +265,8 @@ def main(argv):
     run_data = stats.copy()
     run_data['consensus_time'] = run_data['time']
     del run_data['time']
-    run_data['processes'] = args.processes
+    run_data['processes'] = pool.processes
+    run_data['queue_size'] = pool.queue_size
     call.send_data('end', run_time=run_time, run_data=run_data)
 
 
