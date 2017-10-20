@@ -4,6 +4,11 @@ import multiprocessing.pool
 
 QUEUE_SIZE_MULTIPLIER = 8
 
+#TODO: Replace apply_async() implementation with map_async(). It returns an AsyncResult object whose
+#      .get() returns a list of the result values. It returns after all jobs finish.
+#      The external API can be the same, and the performance should be about the same, except
+#      we'll have to wait until queue_size inputs are gathered before starting the first job,
+#      and we can't start gathering results until all are done. But that might be negligble.
 
 class SyncAsyncPool(multiprocessing.pool.Pool):
   """A wrapper around multiprocessing.Pool which allows parallel processing but ordered results.
