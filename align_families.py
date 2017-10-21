@@ -103,116 +103,137 @@ def main(argv):
       data = {'stdin':False, 'input_size':os.path.getsize(args.infile.name)}
     call.send_data('prelim', run_data=data)
 
-  if args.queue_size is not None and args.queue_size <= 0:
-    fail('Error: --queue-size must be greater than zero.')
-
-  # If we're using mafft, check that we can execute it.
-  if args.aligner == 'mafft' and not distutils.spawn.find_executable('mafft'):
-    fail('Error: Could not find "mafft" command on $PATH.')
-
-  # Open a pool of worker processes.
-  stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
-  pool = parallel_tools.SyncAsyncPool(process_duplex,
-                                      processes=args.processes,
-                                      static_kwargs={'aligner':args.aligner},
-                                      queue_size=args.queue_size,
-                                      callback=process_result,
-                                      callback_args=[stats],
-                                     )
-
-  """Now the main loop.
-  This processes whole duplexes (pairs of strands) at a time for a future option to align the
-  whole duplex at a time.
-  duplex data structure:
-  duplex = {
-    'ab': [
-      {'name1': 'read_name1a',
-       'seq1':  'GATT-ACA',
-       'qual1': 'sc!0 /J*',
-       'name2': 'read_name1b',
-       'seq2':  'ACTGACTA',
-       'qual2': '34I&SDF)'
-      },
-      {'name1': 'read_name2a',
-       ...
-      },
-      ...
-    ],
-    'ba': [
-      ...
-    ]
-  }
-  e.g.:
-  seq = duplex[order][pair_num]['seq1']"""
-
+  # Execute as much of the script as possible in a try/except to catch any exception that occurs
+  # and report it via ET.phone.
   try:
-    duplex = collections.OrderedDict()
-    family = []
-    barcode = None
-    order = None
-    for line in args.infile:
-      fields = line.rstrip('\r\n').split('\t')
-      if len(fields) != 8:
-        continue
-      (this_barcode, this_order, name1, seq1, qual1, name2, seq2, qual2) = fields
-      # If the barcode or order has changed, we're in a new family.
-      # Process the reads we've previously gathered as one family and start a new family.
-      if this_barcode != barcode or this_order != order:
-        duplex[order] = family
-        # If the barcode is different, we're at the end of the whole duplex. Process the it and start
-        # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
-        if this_barcode != barcode:
-          # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
-          #               '/'.join([str(len(duplex[o])) for o in duplex])))
-          pool.compute(duplex, barcode)
-          stats['duplexes'] += 1
-          duplex = collections.OrderedDict()
-        barcode = this_barcode
-        order = this_order
-        family = []
-      pair = {'name1': name1, 'seq1':seq1, 'qual1':qual1, 'name2':name2, 'seq2':seq2, 'qual2':qual2}
-      family.append(pair)
-      stats['pairs'] += 1
-    # Process the last family.
-    duplex[order] = family
-    # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
-    #               '/'.join([str(len(duplex[o])) for o in duplex])))
-    pool.compute(duplex, barcode)
-    stats['duplexes'] += 1
+    if args.queue_size is not None and args.queue_size <= 0:
+      fail('Error: --queue-size must be greater than zero.')
 
-    # Retrieve the remaining results.
-    logging.info('Flushing remaining results from worker processes..')
-    pool.flush()
+    # If we're using mafft, check that we can execute it.
+    if args.aligner == 'mafft' and not distutils.spawn.find_executable('mafft'):
+      fail('Error: Could not find "mafft" command on $PATH.')
 
-  finally:
-    # If an exception occurs in the parent without stopping the child processes, this will hang.
-    # Make sure to kill the children in all cases.
-    pool.close()
-    pool.join()
+    # Open a pool of worker processes.
+    stats = {'duplexes':0, 'time':0, 'pairs':0, 'runs':0, 'failures':0, 'aligned_pairs':0}
+    pool = parallel_tools.SyncAsyncPool(process_duplex,
+                                        processes=args.processes,
+                                        static_kwargs={'aligner':args.aligner},
+                                        queue_size=args.queue_size,
+                                        callback=process_result,
+                                        callback_args=[stats],
+                                       )
+    """Now the main loop.
+    This processes whole duplexes (pairs of strands) at a time for a future option to align the
+    whole duplex at a time.
+    duplex data structure:
+    duplex = {
+      'ab': [
+        {'name1': 'read_name1a',
+         'seq1':  'GATT-ACA',
+         'qual1': 'sc!0 /J*',
+         'name2': 'read_name1b',
+         'seq2':  'ACTGACTA',
+         'qual2': '34I&SDF)'
+        },
+        {'name1': 'read_name2a',
+         ...
+        },
+        ...
+      ],
+      'ba': [
+        ...
+      ]
+    }
+    e.g.:
+    seq = duplex[order][pair_num]['seq1']"""
 
-  if args.infile is not sys.stdin:
-    args.infile.close()
+    try:
+      duplex = collections.OrderedDict()
+      family = []
+      barcode = None
+      order = None
+      for line in args.infile:
+        fields = line.rstrip('\r\n').split('\t')
+        if len(fields) != 8:
+          continue
+        (this_barcode, this_order, name1, seq1, qual1, name2, seq2, qual2) = fields
+        # If the barcode or order has changed, we're in a new family.
+        # Process the reads we've previously gathered as one family and start a new family.
+        if this_barcode != barcode or this_order != order:
+          duplex[order] = family
+          # If the barcode is different, we're at the end of the whole duplex. Process the it and start
+          # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
+          if this_barcode != barcode:
+            # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
+            #               '/'.join([str(len(duplex[o])) for o in duplex])))
+            pool.compute(duplex, barcode)
+            stats['duplexes'] += 1
+            duplex = collections.OrderedDict()
+          barcode = this_barcode
+          order = this_order
+          family = []
+        pair = {'name1': name1, 'seq1':seq1, 'qual1':qual1, 'name2':name2, 'seq2':seq2, 'qual2':qual2}
+        family.append(pair)
+        stats['pairs'] += 1
+      # Process the last family.
+      duplex[order] = family
+      # logging.debug('processing {}: {} orders ({}) [last]'.format(barcode, len(duplex),
+      #               '/'.join([str(len(duplex[o])) for o in duplex])))
+      pool.compute(duplex, barcode)
+      stats['duplexes'] += 1
 
-  end_time = time.time()
-  run_time = int(end_time - start_time)
+      # Retrieve the remaining results.
+      logging.info('Flushing remaining results from worker processes..')
+      pool.flush()
 
-  # Final stats on the run.
-  logging.error('Processed {pairs} read pairs in {duplexes} duplexes, with {failures} alignment '
-                'failures.'.format(**stats))
-  if stats['aligned_pairs'] > 0 and stats['runs'] > 0:
-    per_pair = stats['time'] / stats['aligned_pairs']
-    per_run = stats['time'] / stats['runs']
-    logging.error('{:0.3f}s per pair, {:0.3f}s per run.'.format(per_pair, per_run))
-  logging.error('in {}s total time.'.format(run_time))
+    finally:
+      # If an exception occurs in the parent without stopping the child processes, this will hang.
+      # Make sure to kill the children in all cases.
+      pool.close()
+      pool.join()
+
+    if args.infile is not sys.stdin:
+      args.infile.close()
+
+    # Final stats on the run.
+    run_time = int(time.time() - start_time)
+    logging.error('Processed {pairs} read pairs in {duplexes} duplexes, with {failures} alignment '
+                  'failures.'.format(**stats))
+    if stats['aligned_pairs'] > 0 and stats['runs'] > 0:
+      per_pair = stats['time'] / stats['aligned_pairs']
+      per_run = stats['time'] / stats['runs']
+      logging.error('{:0.3f}s per pair, {:0.3f}s per run.'.format(per_pair, per_run))
+    logging.error('in {}s total time.'.format(run_time))
+
+  except (Exception, KeyboardInterrupt) as exception:
+    if args.phone_home and call:
+      exception_data = getattr(exception, 'child_context', parallel_tools.get_exception_data())
+      run_time = int(time.time() - start_time)
+      try:
+        run_data = get_run_data(stats, pool, args.aligner)
+      except (Exception, UnboundLocalError):
+        run_data = {}
+      run_data['failed'] = True
+      run_data['exception'] = exception_data
+      call.send_data('end', run_time=run_time, run_data=run_data)
+      logging.critical(parallel_tools.format_traceback(exception_data))
+      raise exception
+    else:
+      raise
 
   if args.phone_home:
-    run_data = stats.copy()
-    run_data['align_time'] = run_data['time']
-    del run_data['time']
-    run_data['processes'] = pool.processes
-    run_data['queue_size'] = pool.queue_size
-    run_data['aligner'] = args.aligner
+    run_data = get_run_data(stats, pool, args.aligner)
     call.send_data('end', run_time=run_time, run_data=run_data)
+
+
+def get_run_data(stats, pool, aligner):
+  run_data = stats.copy()
+  run_data['align_time'] = run_data['time']
+  del run_data['time']
+  run_data['processes'] = pool.processes
+  run_data['queue_size'] = pool.queue_size
+  run_data['aligner'] = aligner
+  return run_data
 
 
 def process_duplex(duplex, barcode, aligner='mafft'):

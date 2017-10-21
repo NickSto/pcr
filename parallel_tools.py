@@ -1,3 +1,4 @@
+import sys
 import logging
 import traceback
 import multiprocessing.pool
@@ -137,5 +138,24 @@ def with_context(fxn, *args, **kwargs):
     return fxn(*args, **kwargs)
   except Exception as exception:
     tb = traceback.format_exc()
-    logging.exception(tb)
+    logging.critical(tb)
+    exception.child_context = get_exception_data()
     raise exception
+
+
+def get_exception_data():
+  exception_type, exception_value, trace = sys.exc_info()
+  exception_data = {'type':exception_type.__name__, 'traceback':[]}
+  for filename, lineno, fxn_name, code in traceback.extract_tb(trace):
+    entry = {'file':filename, 'line':lineno, 'function':fxn_name, 'code':code}
+    exception_data['traceback'].append(entry)
+  del trace
+  return exception_data
+
+
+def format_traceback(exception_data):
+  lines = ['Traceback (most recent call last):']
+  for entry in exception_data['traceback']:
+    lines.append('  File "{file}", line {line}, in {function}'.format(**entry))
+    lines.append('    '+entry['code'])
+  return '\n'.join(lines)

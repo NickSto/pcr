@@ -143,126 +143,149 @@ def main(argv):
     else:
       data = {'stdin':False, 'input_size':os.path.getsize(args.infile.name)}
     call.send_data('prelim', run_data=data)
-
-  # Process and validate arguments.
-  if args.queue_size is not None and args.queue_size <= 0:
-    fail('Error: --queue-size must be greater than zero.')
-  if args.qual_format == 'sanger':
-    qual_thres = chr(args.qual + SANGER_START)
-  elif args.qual_format == 'solexa':
-    qual_thres = chr(args.qual + SOLEXA_START)
   else:
-    fail('Error: unrecognized --qual-format.')
-  if args.min_cons_reads > args.min_reads:
-    fail('Error: --min-reads must be greater than --min-cons-reads (or you\'ll have a lot of '
-         'consensus sequences with only N\'s!). If you want to exclude families with fewer than X '
-         'reads, give --min-reads X instead of --min-cons-reads X.')
-  if not any((args.dcs1, args.dcs2, args.sscs1, args.sscs2)):
-    fail('Error: must specify an output file!')
-  # A dict of output filehandles.
-  # Indexed so we can do filehandles['dcs'][mate].
-  filehandles = {
-    'dcs': (args.dcs1, args.dcs2),
-    'sscs': (args.sscs1, args.sscs2),
-  }
+    call = None
 
-  # Open a pool of worker processes.
-  stats = {'time':0, 'reads':0, 'runs':0, 'duplexes':0}
-  static_kwargs = {
-    'min_reads': args.min_reads,
-    'cons_thres': args.cons_thres,
-    'min_cons_reads': args.min_cons_reads,
-    'qual_thres': qual_thres,
-  }
-  pool = parallel_tools.SyncAsyncPool(process_duplex,
-                                      processes=args.processes,
-                                      static_kwargs=static_kwargs,
-                                      queue_size=args.queue_size,
-                                      callback=process_result,
-                                      callback_args=[filehandles, stats],
-                                     )
-
+  # Execute as much of the script as possible in a try/except to catch any exception that occurs
+  # and report it via ET.phone.
   try:
-    total_reads = 0
-    duplex = collections.OrderedDict()
-    family = []
-    barcode = None
-    order = None
-    # Note: mate is a 0-indexed integer ("mate 1" from the input file is mate 0 here).
-    mate = None
-    for line in args.infile:
-      # Allow comments (e.g. for test input files).
-      if line.startswith('#'):
-        continue
-      fields = line.rstrip('\r\n').split('\t')
-      if len(fields) != 6:
-        continue
-      this_barcode, this_order, this_mate, name, seq, qual = fields
-      this_mate = int(this_mate)-1
-      # If the barcode, order, and mate are the same, we're just continuing the add reads to the
-      # current family. Otherwise, store the current family, start a new one, and process the duplex
-      # if we're at the end of one.
-      new_barcode = this_barcode != barcode
-      new_order = this_order != order
-      new_mate = this_mate != mate
-      if new_barcode or new_order or new_mate:
-        if order is not None and mate is not None:
-          duplex[(order, mate)] = family
-        # If the barcode changed, process the last duplex and start a new one.
-        if new_barcode and barcode is not None:
-          assert len(duplex) <= 4, duplex.keys()
-          pool.compute(duplex, barcode)
-          stats['duplexes'] += 1
-          duplex = collections.OrderedDict()
-        barcode = this_barcode
-        order = this_order
-        mate = this_mate
-        family = []
-      read = {'name': name, 'seq':seq, 'qual':qual}
-      family.append(read)
-      total_reads += 1
-    # Process the last family.
-    if order is not None and mate is not None:
-      duplex[(order, mate)] = family
-    assert len(duplex) <= 4, duplex.keys()
-    pool.compute(duplex, barcode)
-    stats['duplexes'] += 1
+    # Process and validate arguments.
+    if args.queue_size is not None and args.queue_size <= 0:
+      fail('Error: --queue-size must be greater than zero.')
+    if args.qual_format == 'sanger':
+      qual_thres = chr(args.qual + SANGER_START)
+    elif args.qual_format == 'solexa':
+      qual_thres = chr(args.qual + SOLEXA_START)
+    else:
+      fail('Error: unrecognized --qual-format.')
+    if args.min_cons_reads > args.min_reads:
+      fail('Error: --min-reads must be greater than --min-cons-reads (or you\'ll have a lot of '
+           'consensus sequences with only N\'s!). If you want to exclude families with fewer than X '
+           'reads, give --min-reads X instead of --min-cons-reads X.')
+    if not any((args.dcs1, args.dcs2, args.sscs1, args.sscs2)):
+      fail('Error: must specify an output file!')
+    # A dict of output filehandles.
+    # Indexed so we can do filehandles['dcs'][mate].
+    filehandles = {
+      'dcs': (args.dcs1, args.dcs2),
+      'sscs': (args.sscs1, args.sscs2),
+    }
 
-    # Retrieve the remaining results.
-    logging.info('Flushing remaining results from worker processes..')
-    pool.flush()
+    # Open a pool of worker processes.
+    stats = {'time':0, 'reads':0, 'runs':0, 'duplexes':0}
+    static_kwargs = {
+      'min_reads': args.min_reads,
+      'cons_thres': args.cons_thres,
+      'min_cons_reads': args.min_cons_reads,
+      'qual_thres': qual_thres,
+    }
+    pool = parallel_tools.SyncAsyncPool(process_duplex,
+                                        processes=args.processes,
+                                        static_kwargs=static_kwargs,
+                                        queue_size=args.queue_size,
+                                        callback=process_result,
+                                        callback_args=[filehandles, stats],
+                                       )
+    try:
+      total_reads = 0
+      duplex = collections.OrderedDict()
+      family = []
+      barcode = None
+      order = None
+      # Note: mate is a 0-indexed integer ("mate 1" from the input file is mate 0 here).
+      mate = None
+      for line in args.infile:
+        # Allow comments (e.g. for test input files).
+        if line.startswith('#'):
+          continue
+        fields = line.rstrip('\r\n').split('\t')
+        if len(fields) != 6:
+          continue
+        this_barcode, this_order, this_mate, name, seq, qual = fields
+        this_mate = int(this_mate)-1
+        # If the barcode, order, and mate are the same, we're just continuing the add reads to the
+        # current family. Otherwise, store the current family, start a new one, and process the
+        # duplex if we're at the end of one.
+        new_barcode = this_barcode != barcode
+        new_order = this_order != order
+        new_mate = this_mate != mate
+        if new_barcode or new_order or new_mate:
+          if order is not None and mate is not None:
+            duplex[(order, mate)] = family
+          # If the barcode changed, process the last duplex and start a new one.
+          if new_barcode and barcode is not None:
+            assert len(duplex) <= 4, duplex.keys()
+            pool.compute(duplex, barcode)
+            stats['duplexes'] += 1
+            duplex = collections.OrderedDict()
+          barcode = this_barcode
+          order = this_order
+          mate = this_mate
+          family = []
+        read = {'name': name, 'seq':seq, 'qual':qual}
+        family.append(read)
+        total_reads += 1
+      # Process the last family.
+      if order is not None and mate is not None:
+        duplex[(order, mate)] = family
+      assert len(duplex) <= 4, duplex.keys()
+      pool.compute(duplex, barcode)
+      stats['duplexes'] += 1
 
-  finally:
-    # If the root process encounters an exception and doesn't tell the workers to stop, it will
-    # hang forever.
-    pool.close()
-    pool.join()
-    # Close all open filehandles.
-    if args.infile is not sys.stdin:
-      args.infile.close()
-    for fh_group in filehandles.values():
-      for fh in fh_group:
-        if fh:
-          fh.close()
+      # Retrieve the remaining results.
+      logging.info('Flushing remaining results from worker processes..')
+      pool.flush()
 
-  end_time = time.time()
-  run_time = int(end_time - start_time)
+    finally:
+      # If the root process encounters an exception and doesn't tell the workers to stop, it will
+      # hang forever.
+      pool.close()
+      pool.join()
+      # Close all open filehandles.
+      if args.infile is not sys.stdin:
+        args.infile.close()
+      for fh_group in filehandles.values():
+        for fh in fh_group:
+          if fh:
+            fh.close()
 
-  # Final stats on the run.
-  logging.info('Processed {} reads and {} duplexes in {} seconds.'
-               .format(total_reads, stats['runs'], run_time))
-  if stats['reads'] > 0 and stats['runs'] > 0:
-    per_read = stats['time'] / stats['reads']
-    per_run = stats['time'] / stats['runs']
-    logging.info('{:0.3f}s per read, {:0.3f}s per run.'.format(per_read, per_run))
+    # Final stats on the run.
+    run_time = int(time.time() - start_time)
+    logging.info('Processed {} reads and {} duplexes in {} seconds.'
+                 .format(total_reads, stats['runs'], run_time))
+    if stats['reads'] > 0 and stats['runs'] > 0:
+      per_read = stats['time'] / stats['reads']
+      per_run = stats['time'] / stats['runs']
+      logging.info('{:0.3f}s per read, {:0.3f}s per run.'.format(per_read, per_run))
 
-  if args.phone_home:
-    run_data = stats.copy()
-    run_data['consensus_time'] = run_data['time']
-    del run_data['time']
-    run_data['processes'] = pool.processes
-    run_data['queue_size'] = pool.queue_size
+  except (Exception, KeyboardInterrupt) as exception:
+    if args.phone_home and call:
+      exception_data = getattr(exception, 'child_context', parallel_tools.get_exception_data())
+      run_time = int(time.time() - start_time)
+      try:
+        run_data = get_run_data(stats, pool)
+      except (Exception, UnboundLocalError):
+        run_data = {}
+      run_data['failed'] = True
+      run_data['exception'] = exception_data
+      call.send_data('end', run_time=run_time, run_data=run_data)
+      logging.critical(parallel_tools.format_traceback(exception_data))
+      raise exception
+    else:
+      raise
+
+  if args.phone_home and call:
+    run_data = get_run_data(stats, pool)
     call.send_data('end', run_time=run_time, run_data=run_data)
+
+
+def get_run_data(stats, pool):
+  run_data = stats.copy()
+  run_data['consensus_time'] = run_data['time']
+  del run_data['time']
+  run_data['processes'] = pool.processes
+  run_data['queue_size'] = pool.queue_size
+  return run_data
 
 
 def process_duplex(duplex, barcode, min_reads=3, cons_thres=0.5, min_cons_reads=0, qual_thres=' '):

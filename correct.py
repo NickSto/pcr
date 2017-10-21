@@ -10,6 +10,7 @@ import argparse
 import resource
 import subprocess
 import networkx
+import parallel_tools
 import swalign
 import shims
 # There can be problems with the submodules, but none are essential.
@@ -104,39 +105,59 @@ def main(argv):
     call.send_data('start')
     call.send_data('prelim', run_data=gather_prelim_data(args.families, args.reads, args.sam))
 
-  logging.info('Reading the fasta/q to map read names to barcodes..')
-  names_to_barcodes = map_names_to_barcodes(args.reads, args.limit)
+  # Execute as much of the script as possible in a try/except to catch any exception that occurs
+  # and report it via ET.phone.
+  try:
+    logging.info('Reading the fasta/q to map read names to barcodes..')
+    names_to_barcodes = map_names_to_barcodes(args.reads, args.limit)
+    print('aaaaa')
 
-  logging.info('Reading the SAM to build the graph of barcode relationships..')
-  graph, reversed_barcodes, num_good_alignments = read_alignments(args.sam, names_to_barcodes,
-                                                                  args.pos, args.mapq,
-                                                                  args.dist, args.limit)
+    logging.info('Reading the SAM to build the graph of barcode relationships..')
+    graph, reversed_barcodes, num_good_alignments = read_alignments(args.sam, names_to_barcodes,
+                                                                    args.pos, args.mapq,
+                                                                    args.dist, args.limit)
 
-  logging.info('Reading the families.tsv to get the counts of each family..')
-  family_counts, read_pairs = get_family_counts(args.families, args.limit)
+    logging.info('Reading the families.tsv to get the counts of each family..')
+    family_counts, read_pairs = get_family_counts(args.families, args.limit)
 
-  if args.structures or args.visualize != 0:
-    logging.info('Counting the unique barcode networks..')
-    structures = count_structures(graph, family_counts)
-    if args.structures:
-      print_structures(structures, args.struct_human)
-    if args.visualize != 0:
-      logging.info('Generating a visualization of barcode networks..')
-      visualize([s['graph'] for s in structures], args.visualize, args.viz_format)
+    if args.structures or args.visualize != 0:
+      logging.info('Counting the unique barcode networks..')
+      structures = count_structures(graph, family_counts)
+      if args.structures:
+        print_structures(structures, args.struct_human)
+      if args.visualize != 0:
+        logging.info('Generating a visualization of barcode networks..')
+        visualize([s['graph'] for s in structures], args.visualize, args.viz_format)
 
-  logging.info('Building the correction table from the graph..')
-  corrections = make_correction_table(graph, family_counts, args.choose_by)
+    logging.info('Building the correction table from the graph..')
+    corrections = make_correction_table(graph, family_counts, args.choose_by)
 
-  logging.info('Reading the families.tsv again to print corrected output..')
-  families = open_as_text_or_gzip(args.families.name)
-  print_corrected_output(families, corrections, reversed_barcodes, args.prepend, args.limit,
-                         args.output)
+    logging.info('Reading the families.tsv again to print corrected output..')
+    families = open_as_text_or_gzip(args.families.name)
+    print_corrected_output(families, corrections, reversed_barcodes, args.prepend, args.limit,
+                           args.output)
 
-  end_time = time.time()
-  run_time = int(end_time - start_time)
-  max_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
-  logging.info('Max memory usage: {:0.2f}MB'.format(max_mem))
-  logging.info('Wall clock time:  {} seconds'.format(run_time))
+    run_time = int(time.time() - start_time)
+    max_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
+    logging.info('Max memory usage: {:0.2f}MB'.format(max_mem))
+    logging.info('Wall clock time:  {} seconds'.format(run_time))
+
+  except (Exception, KeyboardInterrupt) as exception:
+    if args.phone_home and call:
+      exception_data = getattr(exception, 'child_context', parallel_tools.get_exception_data())
+      run_time = int(time.time() - start_time)
+      try:
+        run_data = {'barcodes':len(names_to_barcodes), 'good_alignments':num_good_alignments,
+                    'read_pairs':read_pairs, 'max_mem':int(max_mem)}
+      except Exception:
+        run_data = {}
+      run_data['failed'] = True
+      run_data['exception'] = exception_data
+      call.send_data('end', run_time=run_time, run_data=run_data)
+      logging.critical(parallel_tools.format_traceback(exception_data))
+      raise exception
+    else:
+      raise
 
   if args.phone_home:
     run_data = {'barcodes':len(names_to_barcodes), 'good_alignments':num_good_alignments,
@@ -240,7 +261,7 @@ def map_names_to_barcodes(reads_file, limit=None):
     try:
       name = int(read_name)
     except ValueError:
-      logging.critical('non-int read name "{}"'.format(name))
+      logging.critical('Non-int read name "{}"'.format(read_name))
       raise
     names_to_barcodes[name] = read_seq
   reads_file.close()
