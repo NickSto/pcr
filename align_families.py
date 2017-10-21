@@ -236,9 +236,8 @@ def process_duplex(duplex, barcode, aligner='mafft'):
     try:
       alignment = align_family(family, mate, aligner=aligner)
     except AssertionError as error:
-      context = '\n... on family {}, order {}, mate {}.'.format(barcode, order, mate)
-      error.args = (error.args[0]+context,)
-      raise error
+      logging.exception('While processing duplex {}, order {}, mate {}:'.format(barcode, order, mate))
+      raise
     except (OSError, subprocess.CalledProcessError) as error:
       logging.warning('{} on family {}, order {}, mate {}:\n{}'
                       .format(type(error).__name__, barcode, order, mate, error))
