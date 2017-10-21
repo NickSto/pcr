@@ -65,10 +65,6 @@ def make_argparser():
   io.add_argument('--sscs2', metavar='sscs_2.fa', type=argparse.FileType('w'),
     help=wrap('Save the single-strand consensus sequences (mate 2) in this file (FASTA format). '
               'Warning: This will be overwritten if it exists!'))
-  io.add_argument('--incl-sscs', action='store_true',
-    help=wrap('When outputting duplex consensus sequences, include reads without a full duplex '
-              '(missing one strand). The result will just be the single-strand consensus of the '
-              'remaining read.'))
   params = parser.add_argument_group('Algorithm parameters')
   params.add_argument('-r', '--min-reads', type=int, default=3,
     help=wrap('The minimum number of reads (from each strand) required to form a single-strand '
@@ -164,16 +160,15 @@ def main(argv):
   if not any((args.dcs1, args.dcs2, args.sscs1, args.sscs2)):
     fail('Error: must specify an output file!')
   # A dict of output filehandles.
-  # 1-indexed so we can do filehandles['dcs'][mate].
+  # Indexed so we can do filehandles['dcs'][mate].
   filehandles = {
-    'dcs': (None, args.dcs1, args.dcs2),
-    'sscs': (None, args.sscs1, args.sscs2),
+    'dcs': (args.dcs1, args.dcs2),
+    'sscs': (args.sscs1, args.sscs2),
   }
 
   # Open a pool of worker processes.
   stats = {'time':0, 'reads':0, 'runs':0, 'duplexes':0}
   static_kwargs = {
-    'incl_sscs': args.incl_sscs,
     'min_reads': args.min_reads,
     'cons_thres': args.cons_thres,
     'min_cons_reads': args.min_cons_reads,
@@ -188,11 +183,12 @@ def main(argv):
                                      )
 
   try:
-    all_reads = 0
+    total_reads = 0
     duplex = collections.OrderedDict()
     family = []
     barcode = None
     order = None
+    # Note: mate is a 0-indexed integer ("mate 1" from the input file is mate 0 here).
     mate = None
     for line in args.infile:
       # Allow comments (e.g. for test input files).
@@ -202,21 +198,19 @@ def main(argv):
       if len(fields) != 6:
         continue
       this_barcode, this_order, this_mate, name, seq, qual = fields
-      this_mate = int(this_mate)
-      # If the barcode or order has changed, we're in a new single-stranded family.
-      # Process the reads we've previously gathered as one family and start a new family.
+      this_mate = int(this_mate)-1
+      # If the barcode, order, and mate are the same, we're just continuing the add reads to the
+      # current family. Otherwise, store the current family, start a new one, and process the duplex
+      # if we're at the end of one.
       new_barcode = this_barcode != barcode
       new_order = this_order != order
       new_mate = this_mate != mate
       if new_barcode or new_order or new_mate:
         if order is not None and mate is not None:
           duplex[(order, mate)] = family
-        # We're at the end of the duplex pair if the barcode changes or if the order changes without
-        # the mate changing, or vice versa (the second read in each duplex comes when the barcode
-        # stays the same while both the order and mate switch). Process the duplex and start
-        # a new one. If the barcode is the same, we're in the same duplex, but we've switched strands.
-        if barcode is not None and (new_barcode or not (new_order and new_mate)):
-          assert len(duplex) <= 2, duplex.keys()
+        # If the barcode changed, process the last duplex and start a new one.
+        if new_barcode and barcode is not None:
+          assert len(duplex) <= 4, duplex.keys()
           pool.compute(duplex, barcode)
           stats['duplexes'] += 1
           duplex = collections.OrderedDict()
@@ -226,10 +220,11 @@ def main(argv):
         family = []
       read = {'name': name, 'seq':seq, 'qual':qual}
       family.append(read)
-      all_reads += 1
+      total_reads += 1
     # Process the last family.
-    duplex[(order, mate)] = family
-    assert len(duplex) <= 2, duplex.keys()
+    if order is not None and mate is not None:
+      duplex[(order, mate)] = family
+    assert len(duplex) <= 4, duplex.keys()
     pool.compute(duplex, barcode)
     stats['duplexes'] += 1
 
@@ -255,7 +250,7 @@ def main(argv):
 
   # Final stats on the run.
   logging.info('Processed {} reads and {} duplexes in {} seconds.'
-               .format(all_reads, stats['runs'], run_time))
+               .format(total_reads, stats['runs'], run_time))
   if stats['reads'] > 0 and stats['runs'] > 0:
     per_read = stats['time'] / stats['reads']
     per_run = stats['time'] / stats['runs']
@@ -270,94 +265,138 @@ def main(argv):
     call.send_data('end', run_time=run_time, run_data=run_data)
 
 
-def process_duplex(duplex, barcode, incl_sscs=False, min_reads=3, cons_thres=0.5, min_cons_reads=0,
-                   qual_thres=' '):
-  """Create one duplex consensus sequence from a pair of single-stranded families."""
-  # The code in the main loop ensures that "duplex" contains only reads belonging to one final
+def process_duplex(duplex, barcode, min_reads=3, cons_thres=0.5, min_cons_reads=0, qual_thres=' '):
+  """Create duplex consensus sequences for the reads from one barcode."""
+  # The code in the main loop used to ensure that "duplex" contains only reads belonging to one final
   # duplex consensus read: ab.1 and ba.2 reads OR ab.2 and ba.1 reads. (Of course, one half might
   # be missing).
   logging.info('Starting duplex {}'.format(barcode))
   start = time.time()
   # Construct consensus sequences.
-  sscss, dcs_seq, duplex_mate = make_consensuses(duplex, min_reads, cons_thres, min_cons_reads,
-                                                 qual_thres)
-  reads_per_strand = [sscs['nreads'] for sscs in sscss]
-
+  try:
+    sscss = make_sscss(duplex, min_reads, cons_thres, min_cons_reads, qual_thres)
+    dcss = make_dcss(sscss)
+  except AssertionError:
+    logging.exception('While processing duplex {}:'.format(barcode))
+    raise
   # Format output.
-  dcs_str, sscs_strs = format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand)
+  dcs_strs, sscs_strs = format_outputs(dcss, sscss, barcode)
   # Calculate run statistics.
   elapsed = time.time() - start
-  logging.info('{} sec for {} reads.'.format(elapsed, sum(reads_per_strand)))
+  total_reads = sum([len(family) for family in duplex.values()])
+  logging.debug('{} sec for {} reads.'.format(elapsed, total_reads))
   if len(sscss) > 0:
-    run_stats = {'time':elapsed, 'runs':1, 'reads':sum(reads_per_strand)}
+    run_stats = {'time':elapsed, 'runs':1, 'reads':total_reads}
   else:
     run_stats = {'time':0, 'runs':0, 'reads':0}
-  return dcs_str, sscs_strs, duplex_mate, run_stats
+  return dcs_strs, sscs_strs, run_stats
 
 
-def make_consensuses(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
-  # Make SSCSs.
-  sscss, duplex_mate = make_sscs(duplex, min_reads, cons_thres, min_cons_reads, qual_thres)
-  # Make DCS, if possible.
-  dcs_seq = None
-  if len(sscss) == 2:
-    align = swalign.smith_waterman(sscss[0]['seq'], sscss[1]['seq'])
-    #TODO: log error & return if len(align.target) != len(align.query)
-    dcs_seq = consensus.build_consensus_duplex_simple(align.target, align.query)
-  return sscss, dcs_seq, duplex_mate
-
-
-def make_sscs(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
+def make_sscss(duplex, min_reads, cons_thres, min_cons_reads, qual_thres):
   """Create single-strand consensus sequences from families of raw reads."""
-  sscss = []
-  duplex_mate = None
+  sscss = {}
   for (order, mate), family in duplex.items():
-    nreads = len(family)
-    if nreads < min_reads:
+    # logging.info('\t{0}.{1}:'.format(order, mate))
+    # for read in family:
+    #   logging.info('\t\t{name}\t{seq}'.format(**read))
+    if len(family) < min_reads:
+      logging.debug('\tnot enough reads ({} < {})'.format(len(family), min_reads))
       continue
-    # The mate number for the duplex consensus. It's arbitrary, but all that matters is that the
-    # two mates have different numbers. This system ensures that:
-    # Mate 1 is from the consensus of ab/1 and ba/2 families, while mate 2 is from ba/1 and ab/2.
-    if (order == 'ab' and mate == 1) or (order == 'ba' and mate == 2):
-      duplex_mate = 1
-    else:
-      duplex_mate = 2
-    seqs = [read['seq'] for read in family]
-    quals = [read['qual'] for read in family]
-    consensus_seq = consensus.get_consensus(seqs, quals, cons_thres=cons_thres,
-                                            min_reads=min_cons_reads, qual_thres=qual_thres)
-    sscss.append({'seq':consensus_seq, 'order':order, 'mate':mate, 'nreads':nreads})
-  return sscss, duplex_mate
+    sscs = make_sscs(family, order, mate, qual_thres, cons_thres, min_cons_reads)
+    sscss[(order, mate)] = sscs
+  return sscss
 
 
-def format_outputs(sscss, dcs_seq, barcode, incl_sscs, reads_per_strand):
+def make_sscs(family, order, mate, qual_thres, cons_thres, min_cons_reads):
+  seqs = [read['seq'] for read in family]
+  quals = [read['qual'] for read in family]
+  consensus_seq = consensus.get_consensus(seqs,
+                                          quals,
+                                          cons_thres=cons_thres,
+                                          min_reads=min_cons_reads,
+                                          qual_thres=qual_thres
+                                         )
+  return {'seq':consensus_seq, 'order':order, 'mate':mate, 'nreads':len(family)}
+
+
+def make_dcss(sscss):
+  # ordermates is the mapping between the duplex consensus mate number and the order/mates of the
+  # SSCSs it's composed of. It's arbitrary but consistent, to make sure the duplex consensuses have
+  # different mate numbers, and they're the same from run to run.
+  ordermates = {
+    0: (('ab', 0), ('ba', 1)),
+    1: (('ab', 1), ('ba', 0)),
+  }
+  # Get the consensus of each pair of SSCSs.
+  # dcss is indexed by (0-based) mate.
+  dcss = []
+  for duplex_mate in 0, 1:
+    # Gather the pair of reads for this duplex consensus.
+    sscs_pair = []
+    for order, mate in ordermates[duplex_mate]:
+      sscs = sscss.get((order, mate))
+      if sscs:
+        sscs_pair.append(sscs)
+    if len(sscs_pair) < 2:
+      # If we didn't find two SSCSs for this duplex mate, we can't make a complete pair of duplex
+      # consensus sequences.
+      break
+    align = swalign.smith_waterman(sscs_pair[0]['seq'], sscs_pair[1]['seq'])
+    if len(align.target) != len(align.query):
+      message = '{} != {}:\n'.format(len(align.target), len(align.query))
+      message += '\n'.join([repr(sscs) for sscs in sscs_pair])
+      raise AssertionError(message)
+    seq = consensus.build_consensus_duplex_simple(align.target, align.query)
+    reads_per_strand = [sscs['nreads'] for sscs in sscs_pair]
+    dcss.append({'seq':seq, 'nreads':reads_per_strand})
+  assert len(dcss) == 0 or len(dcss) == 2, len(dcss)
+  return dcss
+
+
+def format_outputs(dcss, sscss, barcode):
+  """Format the consensus sequences into FASTA-formatted strings ready for printing.
+  sscs_strs is structured so that sscs_strs[order][mate] is the FASTA-formatted output string for
+  one SSCS (including ending newline)."""
   # SSCS
-  sscs_strs = [None, None, None]
-  for sscs in sscss:
-    sscs_strs[sscs['mate']] = '>{0}.{order} {nreads}\n{seq}\n'.format(barcode, **sscs)
+  sscs_strs = {}
+  for order in 'ab', 'ba':
+    sscs_str_pair = []
+    for mate in 0, 1:
+      sscs = sscss.get((order, mate))
+      if sscs:
+        sscs_str_pair.append('>{bar}.{order} {nreads}\n{seq}\n'.format(bar=barcode, **sscs))
+    if len(sscs_str_pair) == 2:
+      sscs_strs[order] = sscs_str_pair
   # DCS
-  dcs_str = ''
-  if dcs_seq:
-    dcs_str = format_consensus(dcs_seq, barcode, reads_per_strand)
-  elif incl_sscs and sscss:
-    dcs_str = format_consensus(sscss[0]['seq'], barcode, reads_per_strand)
-  return dcs_str, sscs_strs
-
-
-def format_consensus(seq, barcode, reads_per_strand):
-  nreads_str = '-'.join(map(str, reads_per_strand))
-  return '>{bar} {nreads}\n{seq}\n'.format(bar=barcode, nreads=nreads_str, seq=seq)
+  dcs_strs = []
+  if dcss:
+    assert len(dcss) == 2, (barcode, len(dcss))
+    for duplex_mate in 0, 1:
+      dcs = dcss[duplex_mate]
+      nreads_str = '-'.join([str(nreads) for nreads in dcs['nreads']])
+      dcs_str = '>{bar} {nreads}\n{seq}\n'.format(bar=barcode, nreads=nreads_str, seq=dcs['seq'])
+      dcs_strs.append(dcs_str)
+  return dcs_strs, sscs_strs
 
 
 def process_result(result, filehandles, stats):
-  dcs_str, sscs_strs, duplex_mate, run_stats = result
+  dcs_strs, sscs_strs, run_stats = result
+  # Stats
   for key, value in run_stats.items():
     stats[key] += value
-  if dcs_str and filehandles['dcs'][duplex_mate]:
-    filehandles['dcs'][duplex_mate].write(dcs_str)
-  for mate in (1, 2):
-    if sscs_strs[mate] and filehandles['sscs'][mate]:
-      filehandles['sscs'][mate].write(sscs_strs[mate])
+  # SSCSs
+  for order, sscs_pair in sscs_strs.items():
+    if sscs_pair:
+      for mate in 0, 1:
+        sscs_fh = filehandles['sscs'][mate]
+        if sscs_fh:
+          sscs_fh.write(sscs_pair[mate])
+  # DCSs
+  if dcs_strs:
+    for duplex_mate in 0, 1:
+      dcs_fh = filehandles['dcs'][duplex_mate]
+      if dcs_fh:
+        dcs_fh.write(dcs_strs[duplex_mate])
 
 
 def tone_down_logger():

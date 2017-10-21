@@ -158,32 +158,19 @@ function dunovo {
   _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa families.dcs_2.fa
 }
 
-# dunovo.py with --incl-sscs
-function dunovo_incl_sscs {
-  _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa \
-          families.dcs.incl-sscs_1.fa  families.dcs.incl-sscs_2.fa \
-          --incl-sscs
-}
-
 # dunovo.py with 3 processes
 function dunovo_p3 {
   _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa families.dcs_2.fa -p 3
-  _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa \
-          families.dcs.incl-sscs_1.fa  families.dcs.incl-sscs_2.fa \
-          --incl-sscs -p 3
 }
 
 # dunovo.py quality score consideration
 function dunovo_qual {
-  _dunovo qual.msa.tsv qual.10.sscs_1.fa qual.10.sscs_2.fa qual.10.dcs_1.fa qual.10.dcs_2.fa \
-          --incl-sscs -q 10
-  _dunovo qual.msa.tsv qual.20.sscs_1.fa qual.20.sscs_2.fa qual.20.dcs_1.fa qual.20.dcs_2.fa \
-          --incl-sscs -q 20
+  _dunovo qual.msa.tsv qual.10.sscs_1.fa qual.10.sscs_2.fa empty.txt empty.txt -q 10
+  _dunovo qual.msa.tsv qual.20.sscs_1.fa qual.20.sscs_2.fa empty.txt empty.txt -q 20
 }
 
 function dunovo_gapqual {
-  _dunovo gapqual.msa.tsv gapqual.sscs_1.fa gapqual.sscs_2.fa gapqual.dcs_1.fa gapqual.dcs_2.fa \
-          --incl-sscs -q 25
+  _dunovo gapqual.msa.tsv gapqual.sscs_1.fa gapqual.sscs_2.fa empty.txt empty.txt -q 25
 }
 
 function dunovo_consthres {
