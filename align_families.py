@@ -4,8 +4,9 @@ import os
 import sys
 import time
 import logging
-import tempfile
 import argparse
+import tempfile
+import resource
 import subprocess
 import collections
 import distutils.spawn
@@ -191,19 +192,20 @@ def main(argv):
       # Make sure to kill the children in all cases.
       pool.close()
       pool.join()
-
-    if args.infile is not sys.stdin:
-      args.infile.close()
+      # Close input filehandle if it's open.
+      if args.infile is not sys.stdin:
+        args.infile.close()
 
     # Final stats on the run.
     run_time = int(time.time() - start_time)
+    max_mem = get_max_mem()
     logging.error('Processed {pairs} read pairs in {duplexes} duplexes, with {failures} alignment '
                   'failures.'.format(**stats))
     if stats['aligned_pairs'] > 0 and stats['runs'] > 0:
       per_pair = stats['time'] / stats['aligned_pairs']
       per_run = stats['time'] / stats['runs']
       logging.error('{:0.3f}s per pair, {:0.3f}s per run.'.format(per_pair, per_run))
-    logging.error('in {}s total time.'.format(run_time))
+    logging.error('in {}s total time and {}MB RAM.'.format(run_time, max_mem))
 
   except (Exception, KeyboardInterrupt) as exception:
     if args.phone_home and call:
@@ -213,6 +215,10 @@ def main(argv):
         run_data = get_run_data(stats, pool, args.aligner)
       except (Exception, UnboundLocalError):
         run_data = {}
+      try:
+        run_data['mem'] = get_max_mem()
+      except Exception:
+        pass
       run_data['failed'] = True
       run_data['exception'] = exception_data
       call.send_data('end', run_time=run_time, run_data=run_data)
@@ -221,15 +227,24 @@ def main(argv):
     else:
       raise
 
-  if args.phone_home:
-    run_data = get_run_data(stats, pool, args.aligner)
+  if args.phone_home and call:
+    run_data = get_run_data(stats, pool, args.aligner, max_mem)
     call.send_data('end', run_time=run_time, run_data=run_data)
 
 
-def get_run_data(stats, pool, aligner):
+def get_max_mem():
+  """Get the maximum memory usage (RSS) of this process and all its children, in MB."""
+  maxrss_total  = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+  maxrss_total += resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+  return maxrss_total/1024
+
+
+def get_run_data(stats, pool, aligner, max_mem=None):
   run_data = stats.copy()
   run_data['align_time'] = run_data['time']
   del run_data['time']
+  if max_mem is not None:
+    run_data['mem'] = max_mem
   run_data['processes'] = pool.processes
   run_data['queue_size'] = pool.queue_size
   run_data['aligner'] = aligner

@@ -5,6 +5,7 @@ import sys
 import time
 import logging
 import argparse
+import resource
 import collections
 import parallel_tools
 import consensus
@@ -251,12 +252,14 @@ def main(argv):
 
     # Final stats on the run.
     run_time = int(time.time() - start_time)
+    max_mem = get_max_mem()
     logging.info('Processed {} reads and {} duplexes in {} seconds.'
                  .format(total_reads, stats['runs'], run_time))
     if stats['reads'] > 0 and stats['runs'] > 0:
       per_read = stats['time'] / stats['reads']
       per_run = stats['time'] / stats['runs']
       logging.info('{:0.3f}s per read, {:0.3f}s per run.'.format(per_read, per_run))
+    logging.info('in {}s total time and {}MB RAM.'.format(run_time, max_mem))
 
   except (Exception, KeyboardInterrupt) as exception:
     if args.phone_home and call:
@@ -266,6 +269,10 @@ def main(argv):
         run_data = get_run_data(stats, pool)
       except (Exception, UnboundLocalError):
         run_data = {}
+      try:
+        run_data['mem'] = get_max_mem()
+      except Exception:
+        pass
       run_data['failed'] = True
       run_data['exception'] = exception_data
       call.send_data('end', run_time=run_time, run_data=run_data)
@@ -275,14 +282,23 @@ def main(argv):
       raise
 
   if args.phone_home and call:
-    run_data = get_run_data(stats, pool)
+    run_data = get_run_data(stats, pool, max_mem)
     call.send_data('end', run_time=run_time, run_data=run_data)
 
 
-def get_run_data(stats, pool):
+def get_max_mem():
+  """Get the maximum memory usage (RSS) of this process and all its children, in MB."""
+  maxrss_total  = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+  maxrss_total += resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+  return maxrss_total/1024
+
+
+def get_run_data(stats, pool, max_mem=None):
   run_data = stats.copy()
   run_data['consensus_time'] = run_data['time']
   del run_data['time']
+  if max_mem is not None:
+    run_data['mem'] = max_mem
   run_data['processes'] = pool.processes
   run_data['queue_size'] = pool.queue_size
   return run_data
