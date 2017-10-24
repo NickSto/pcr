@@ -14,7 +14,7 @@
       <option value="kalign">Kalign</option>
       <option value="mafft">MAFFT</option>
     </param>
-    <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the number of processes used, the time taken to process it, the alignment algorithm selected, and the IP address of the machine running it. The names of the input and output datasets are not sent."/>
+    <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the number of processes used, the time and memory taken to process it, the alignment algorithm selected, and the IP address of the machine running it. Also, if the tool fails, it will report the name of the exception thrown and the line of code it occurred in. The names of the input and output datasets are not sent. All the reporting and recording code is available at https://github.com/NickSto/ET."/>
   </inputs>
   <outputs>
     <data name="output" format="tabular"/>
