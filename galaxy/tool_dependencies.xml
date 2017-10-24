@@ -15,7 +15,7 @@
   <package name="dunovo" version="2.0.4">
     <install version="1.0">
       <actions>
-        <action type="download_by_url">https://github.com/galaxyproject/dunovo/archive/v2.0.4.tar.gz</action>
+        <action type="download_by_url" sha256sum="c84e9d837de06439b5e59b9e64c85b9ca6253e5e1212a8473a36d14906b4cc70">https://github.com/galaxyproject/dunovo/archive/v2.0.4.tar.gz</action>
         <action type="shell_command">make</action>
         <action type="move_directory_files">
           <source_directory>.</source_directory>
