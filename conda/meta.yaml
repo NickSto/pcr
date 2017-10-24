@@ -1,13 +1,13 @@
-{% set version = "2.0.0-rc.3" %}
+{% set version = "2.0.4" %}
 
 package:
   name: dunovo
-  version: 2.0.0rc.3
+  version: {{ version }}
 
 source:
   fn: v{{ version }}.tar.gz
   url: https://github.com/galaxyproject/dunovo/archive/v{{ version }}.tar.gz
-  sha256: 6bb5ab1eb1a935be913aba4a5c2b7c291ad77498677714ef65220020182e6dc6
+  sha256: c84e9d837de06439b5e59b9e64c85b9ca6253e5e1212a8473a36d14906b4cc70
 
 build:
   number: 0
