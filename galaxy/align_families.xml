@@ -25,8 +25,8 @@
       <output name="output" file="smoke.families.aligned.tsv"/>
     </test>
     <test>
-      <param name="input" value="families.in.tsv"/>
-      <output name="output" file="families.sort.tsv"/>
+      <param name="input" value="families.sort.tsv"/>
+      <output name="output" file="families.msa.tsv"/>
     </test>
   </tests>
   <help>
