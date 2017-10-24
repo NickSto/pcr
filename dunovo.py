@@ -88,10 +88,12 @@ def make_argparser():
   phoning.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
               'performance of the tool. The only data which will be recorded is the name and '
-              'version of the tool, the size of the input data, the time taken to process it, and '
-              'the IP address of the machine running it. No filenames are sent, and the only '
-              'parameters reported are the number of --processes and the --queue-size. All the '
-              'reporting and recording code is available at https://github.com/NickSto/ET.'))
+              'version of the tool, the size of the input data, the time and memory taken to '
+              'process it, and the IP address of the machine running it. Also, if the script '
+              'fails, it will report the name of the exception thrown and the line of code it '
+              'occurred in. No filenames are sent, and the only parameters reported are the number '
+              'of --processes and the --queue-size. All the reporting and recording code is '
+              'available at https://github.com/NickSto/ET.'))
   phoning.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
     help=wrap('Tell the script it\'s running on Galaxy. Currently this only affects data reported '
               'when phoning home.'))
@@ -259,7 +261,7 @@ def main(argv):
       per_read = stats['time'] / stats['reads']
       per_run = stats['time'] / stats['runs']
       logging.info('{:0.3f}s per read, {:0.3f}s per run.'.format(per_read, per_run))
-    logging.info('in {}s total time and {}MB RAM.'.format(run_time, max_mem))
+    logging.info('in {}s total time and {:0.2f}MB RAM.'.format(run_time, max_mem))
 
   except (Exception, KeyboardInterrupt) as exception:
     if args.phone_home and call:

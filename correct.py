@@ -71,9 +71,11 @@ def make_argparser():
   parser.add_argument('--phone-home', action='store_true',
     help='Report helpful usage data to the developer, to better understand the use cases and '
          'performance of the tool. The only data which will be recorded is the name and version of '
-         'the tool, the size of the input data, the time taken to process it, and the IP address '
-         'of the machine running it. No parameters or filenames are sent. All the reporting and '
-         'recording code is available at https://github.com/NickSto/ET.')
+         'the tool, the size of the input data, the time and memory taken to process it, and the '
+         'IP address of the machine running it. Also, if the script fails, it will report the name '
+         'of the exception thrown and the line of code it occurred in. No parameters or filenames '
+         'are sent. All the reporting and recording code is available at '
+         'https://github.com/NickSto/ET.')
   parser.add_argument('--galaxy', dest='platform', action='store_const', const='galaxy',
     help='Tell the script it\'s running on Galaxy. Currently this only affects data reported '
          'when phoning home.')
