@@ -327,7 +327,13 @@ def make_msa(family, mate, aligner='mafft'):
 
 def make_msa_kalign(family, mate):
   logging.info('Aligning with kalign.')
-  from kalign import kalign
+  try:
+    # Import in the child process in case there's any issue in the .so with shared state between
+    # processes (maybe not possible, but just in case).
+    from kalign import kalign
+  except ImportError:
+    logging.critical('Error importing kalign module. Check that the submodule is installed properly.')
+    raise
   seqs = [pair['seq'+mate] for pair in family]
   aln_struct = kalign.align(seqs)
   return [aln_struct.seqs[i] for i in range(aln_struct.nseqs)]
