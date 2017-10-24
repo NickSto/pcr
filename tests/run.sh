@@ -186,19 +186,17 @@ function dunovo_consthres {
 # baralign.sh
 function baralign {
   echo -e "\tbaralign.sh ::: correct.families.tsv:"
-  bash "$dirname/../baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" \
-    "$dirname/correct.tmp.bam" 2>/dev/null
-  samtools view -h "$dirname/correct.tmp.bam" | diff -s "$dirname/correct.sam" -
-  rm -rf "$dirname/refdir.tmp" "$dirname/correct.tmp.bam" "$dirname/correct.tmp.bam.bai"
+  bash "$dirname/../baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
+    | diff -s "$dirname/correct.sam" -
+  rm -rf "$dirname/refdir.tmp"
 }
 
 # correct.py
 function correct {
   echo -e "\tcorrect.py ::: correct.sam"
-  "$dirname/../correct.py" "$dirname/correct.families.tsv" "$dirname/correct.barcodes.fa" \
-    "$dirname/correct.sam" > "$dirname/correct.families.tmp.tsv"
-  diff -s "$dirname/correct.families.corrected.tsv" "$dirname/correct.families.tmp.tsv"
-  rm "$dirname/correct.families.tmp.tsv"
+  "$dirname/../correct.py" "$dirname/correct.families.tsv" \
+      "$dirname/correct.barcodes.fa" "$dirname/correct.sam" \
+    | diff -s "$dirname/correct.families.corrected.tsv" -
 }
 
 function stats_diffs {

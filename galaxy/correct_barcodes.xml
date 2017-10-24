@@ -9,8 +9,8 @@
     <!-- TODO: require Python 2.7 -->
   </requirements>
   <command detect_errors="exit_code"><![CDATA[
-    baralign.sh '$input' refdir barcodes.bam
-    && samtools view -f 256 barcodes.bam
+    baralign.sh '$input' refdir
+    | samtools view -S -f 256 -
     | correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos '$input' refdir/barcodes.fa
     | sort
     > '$output'

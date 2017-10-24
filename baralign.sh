@@ -5,11 +5,15 @@ if [ x$BASH = x ] || [ ! $BASH_VERSINFO ] || [ $BASH_VERSINFO -lt 4 ]; then
 fi
 set -ue
 
-Usage="Usage: \$ $(basename $0) [-R] families_file ref_dir out_file
-families_file: The families.tsv produced by make-barcodes.awk and sorted.
-ref_dir:  The directory to put the reference file (\"barcodes.fa\") and its index
-          files in.
-out_file: The path to put the output alignment BAM file at.
+RefdirDefault=refdir
+
+Usage="Usage: \$ $(basename $0) [-R] families.tsv [refdir [outfile.sam|outfile.bam]]
+families.tsv: The families file produced by make-barcodes.awk and sorted.
+refdir: The directory to put the reference file (\"barcodes.fa\") and its index
+        files in. Default: \"$RefdirDefault\".
+outfile.bam: Print the output to this path. It will be in SAM format unless the
+             path ends in \".bam\". If not given, it will be printed to stdout
+             in SAM format.
 -R: Don't include reversed barcodes (alpha+beta -> beta+alpha) in the alignment target."
 
 function main {
@@ -28,21 +32,41 @@ function main {
   refdir=${@:$OPTIND+1:1}
   outfile=${@:$OPTIND+2:1}
 
-  if ! [[ -f $families ]]; then
-    fail "Error: families_file \"$families\" not found."
+  # Validate arguments.
+  if ! [[ $refdir ]]; then
+    refdir=$RefdirDefault
   fi
   if ! [[ -d $refdir ]]; then
     echo "Info: ref_dir \"$refdir\" not found. Creating.." >&2
     mkdir $refdir
   fi
-  outbase=$(echo $outfile | sed -E 's/\.bam$//')
-  if [[ $outbase == $outfile ]]; then
-    fail "Error: out_file \"$outfile\" does not end in .bam."
+  if ! [[ -f $families ]]; then
+    fail "Error: families_file \"$families\" not found."
   fi
-  if [[ -e $outfile ]] || [[ -e $outbase.sam ]] || [[ -e $outbase.tmp.sam ]]; then
-    fail "Error: out_file \"$outfile\" conflicts with existing filename(s)."
+  # Determine how and where to put the output.
+  if [[ ${outfile:${#outfile}-4} == .bam ]]; then
+    format=bam
+  else
+    format=sam
+  fi
+  outbase=$(echo $outfile | sed -E 's/\.bam$//')
+  if [[ $outfile ]]; then
+    if [[ -e $outfile ]]; then
+      fail "Error: output file \"$outfile\" already exists."
+    fi
+    if [[ $format == bam ]]; then
+      if [[ -e $outbase.sam ]] || [[ -e $outbase.bam.bai ]]; then
+        fail "Error: A related filename already exists (.sam/.bam.bai)."
+      fi
+      bowtie2_outargs="-S $outbase.sam"
+    else
+      bowtie2_outargs="-S $outfile"
+    fi
+  else
+    bowtie2_outargs=
   fi
 
+  # Check for required commands.
   for cmd in bowtie2 bowtie2-build samtools awk; do
     if ! which $cmd >/dev/null 2>/dev/null; then
       fail "Error: command \"$cmd\" not found."
@@ -52,6 +76,7 @@ function main {
   echo "
 families: $families
 refdir:   $refdir
+format:   $format
 outfile:  $outfile
 outbase:  $outbase" >&2
 
@@ -94,15 +119,23 @@ outbase:  $outbase" >&2
 
   # Perform alignment.
   bowtie2-build --packed $refdir/barcodes-ref.fa $refdir/barcodes-ref >/dev/null
-  bowtie2 -a -x $refdir/barcodes-ref -f -U $refdir/barcodes.fa -S $outbase.sam
-  samtools view -Sb $outbase.sam > $outbase.tmp.bam
-  samtools sort $outbase.tmp.bam $outbase
-  if [[ -s $outfile ]]; then
-    samtools index $outbase.bam
-    rm $outbase.sam $outbase.tmp.bam
-    echo "Success. Output located in \"$outfile\"." >&2
-  else
-    echo "Warning: No output file \"$outfile\" found." >&2
+  bowtie2 -a -x $refdir/barcodes-ref -f -U $refdir/barcodes.fa $bowtie2_outargs
+  if [[ $format == bam ]]; then
+    samtools view -Sb $outbase.sam | samtools sort -o - dummy > $outfile
+    if [[ -s $outfile ]]; then
+      samtools index $outfile
+    fi
+  fi
+  # Check output.
+  if [[ $outfile ]]; then
+    if [[ -s $outfile ]]; then
+      if [[ $format == bam ]] && [[ -e $outbase.sam ]]; then
+        rm $outbase.sam
+      fi
+      echo "Success. Output located in \"$outfile\"." >&2
+    else
+      echo "Warning: No output file \"$outfile\" found." >&2
+    fi
   fi
 }
 
