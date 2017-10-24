@@ -112,7 +112,6 @@ def main(argv):
   try:
     logging.info('Reading the fasta/q to map read names to barcodes..')
     names_to_barcodes = map_names_to_barcodes(args.reads, args.limit)
-    print('aaaaa')
 
     logging.info('Reading the SAM to build the graph of barcode relationships..')
     graph, reversed_barcodes, num_good_alignments = read_alignments(args.sam, names_to_barcodes,
