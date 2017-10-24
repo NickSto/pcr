@@ -147,6 +147,7 @@ function align_p3 {
     | diff -s - "$dirname/families.msa.tsv"
 }
 
+# align_families.py smoke test
 function align_smoke {
   echo -e "\talign_families.py ::: smoke.families.tsv:"
   python "$dirname/../align_families.py" -q "$dirname/smoke.families.tsv" \
@@ -180,6 +181,24 @@ function dunovo_consthres {
   _dunovo cons.thres.msa.tsv cons.thres.0.7.sscs_1.fa cons.thres.0.7.sscs_2.fa \
           cons.thres.0.7.dcs_1.fa cons.thres.0.7.dcs_2.fa \
           --min-cons-reads 3 --cons-thres 0.7
+}
+
+# baralign.sh
+function baralign {
+  echo -e "\tbaralign.sh ::: correct.families.tsv:"
+  bash "$dirname/../baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" \
+    "$dirname/correct.tmp.bam" 2>/dev/null
+  samtools view -h "$dirname/correct.tmp.bam" | diff -s "$dirname/correct.sam" -
+  rm -rf "$dirname/refdir.tmp" "$dirname/correct.tmp.bam" "$dirname/correct.tmp.bam.bai"
+}
+
+# correct.py
+function correct {
+  echo -e "\tcorrect.py ::: correct.sam"
+  "$dirname/../correct.py" "$dirname/correct.families.tsv" "$dirname/correct.barcodes.fa" \
+    "$dirname/correct.sam" > "$dirname/correct.families.tmp.tsv"
+  diff -s "$dirname/correct.families.corrected.tsv" "$dirname/correct.families.tmp.tsv"
+  rm "$dirname/correct.families.tmp.tsv"
 }
 
 function stats_diffs {
