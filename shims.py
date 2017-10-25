@@ -22,25 +22,20 @@ class simplewrap(Shim):
 
 
 class phone(Shim):
-  def send_start(script_path,
+  class Call(object):
+    def __init__(self,
+                 script_path,
                  version,
+                 run_id=None,
                  domain=None,
+                 timeout=None,
                  secure=None,
                  platform=None,
                  test=False,
-                 fail='warn'):
-    pass
-  def send_end(script_path,
-               version,
-               run_id,
-               run_time,
-               optional_run_data={},
-               domain=None,
-               secure=None,
-               platform=None,
-               test=False,
-               fail='warn'):
-    pass
+                 fail='exception'):
+      pass
+    def send_data(self, event_type, run_data={}, run_time=None):
+      pass
 
 
 def get_module_or_shim(module_path):
