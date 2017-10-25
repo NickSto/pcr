@@ -4,7 +4,7 @@
   <requirements>
     <requirement type="package" version="2.2.5">bowtie2</requirement>
     <requirement type="package" version="0.1.18">samtools</requirement>
-    <requirement type="package" version="1.11">networkx</requirement>
+    <requirement type="package" version="1.10">networkx</requirement>
     <requirement type="package" version="2.0.6">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>

@@ -10,7 +10,7 @@ source:
   sha256: 3d628d297767f9836ab57ef738b2b29f588c36df8c43ec6814ea97e29da1d5ec
 
 build:
-  number: 0
+  number: 1
   skip: True  # [py3k or osx]
 
 requirements:
@@ -26,7 +26,7 @@ requirements:
     - mafft 7.221
     - samtools 0.1.18
     - bowtie2 2.2.5
-    - networkx 1.11
+    - networkx 1.10
     - paste
     - gawk
 
