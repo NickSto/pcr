@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
-<tool id="align_families" name="Du Novo: Align families" version="2.0.4">
+<tool id="align_families" name="Du Novo: Align families" version="2.0.6">
   <description>of duplex sequencing reads</description>
   <requirements>
     <requirement type="package" version="7.221">mafft</requirement>
-    <requirement type="package" version="2.0.4">dunovo</requirement>
+    <requirement type="package" version="2.0.6">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
   <command detect_errors="exit_code">align_families.py --aligner $aligner --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
@@ -11,7 +11,7 @@
   <inputs>
     <param name="input" type="data" format="tabular" label="Input reads" help="with barcodes, grouped by family"/>
     <param name="aligner" type="select" value="mafft" label="Multiple sequence aligner" help="MAFFT is the original aligner Du Novo was published with in 2016. Kalign is much faster and has similar accuracy.">
-      <option value="kalign">Kalign</option>
+      <option value="kalign">Kalign2</option>
       <option value="mafft">MAFFT</option>
     </param>
     <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the number of processes used, the time and memory taken to process it, the alignment algorithm selected, and the IP address of the machine running it. Also, if the tool fails, it will report the name of the exception thrown and the line of code it occurred in. The names of the input and output datasets are not sent. All the reporting and recording code is available at https://github.com/NickSto/ET."/>
