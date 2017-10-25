@@ -145,7 +145,13 @@ def main(argv):
 
   except (Exception, KeyboardInterrupt) as exception:
     if args.phone_home and call:
-      exception_data = getattr(exception, 'child_context', parallel_tools.get_exception_data())
+      try:
+        exception_data = getattr(exception, 'child_context', parallel_tools.get_exception_data())
+        logging.critical(parallel_tools.format_traceback(exception_data))
+        exception_data = parallel_tools.scrub_tb_paths(exception_data)
+      except Exception:
+        exception_data = {}
+        raise
       run_time = int(time.time() - start_time)
       try:
         run_data = {'barcodes':len(names_to_barcodes), 'good_alignments':num_good_alignments,
@@ -153,9 +159,9 @@ def main(argv):
       except Exception:
         run_data = {}
       run_data['failed'] = True
-      run_data['exception'] = exception_data
+      if exception_data:
+        run_data['exception'] = exception_data
       call.send_data('end', run_time=run_time, run_data=run_data)
-      logging.critical(parallel_tools.format_traceback(exception_data))
       raise exception
     else:
       raise

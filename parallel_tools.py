@@ -1,4 +1,6 @@
+import os
 import sys
+import getpass
 import logging
 import traceback
 import multiprocessing.pool
@@ -139,12 +141,12 @@ def with_context(fxn, *args, **kwargs):
 
 def get_exception_data():
   exception_type, exception_value, trace = sys.exc_info()
-  exception_data = {'type':exception_type.__name__, 'traceback':[]}
+  trace_events = []
   for filename, lineno, fxn_name, code in traceback.extract_tb(trace):
     entry = {'file':filename, 'line':lineno, 'function':fxn_name, 'code':code}
-    exception_data['traceback'].append(entry)
+    trace_events.append(entry)
   del trace
-  return exception_data
+  return {'type':exception_type.__name__, 'traceback':trace_events}
 
 
 def format_traceback(exception_data):
@@ -153,3 +155,78 @@ def format_traceback(exception_data):
     lines.append('  File "{file}", line {line}, in {function}'.format(**entry))
     lines.append('    '+entry['code'])
   return '\n'.join(lines)
+
+
+def scrub_tb_paths(exception_data):
+  """Convenience function that applies scrub_paths() to the paths in the traceback of data returned
+  from get_exception_data()."""
+  trace_events = exception_data['traceback']
+  paths = scrub_paths([entry['file'] for entry in trace_events])
+  for path, entry in zip(paths, trace_events):
+    entry['file'] = path
+  return exception_data
+
+
+def scrub_paths(paths):
+  """Do your best to remove sensitive data from paths."""
+  # First, remove the common start of the paths.
+  paths = abbreviate_paths(paths, keep_last=True)
+  for path in paths:
+    parts = path.split(os.sep)
+    # If the current user's username appears in the path, remove it and everything before it.
+    username = getpass.getuser()
+    for i, part in enumerate(parts):
+      if part == username:
+        parts = parts[i+1:]
+        break
+    # If the path starts with "/home/[something]" or "/user/[something]", remove those parts.
+    if len(parts) >= 4 and (parts[:2] == ['', 'home'] or parts[:2] == ['', 'user']):
+      parts = parts[3:]
+    # Finally, keep only the last 2 directory names (unless the result would be longer than what
+    # the previous steps produced).
+    if len(parts) > 3:
+      parts = path.split(os.sep)
+      parts = parts[len(parts)-3:]
+    yield os.sep.join(parts)
+
+
+def abbreviate_paths(paths, keep_last=False):
+  """Shorten paths by removing their common prefix.
+  If keep_last, then never remove the last path component (which would happen if all the paths were
+  the same)."""
+  longest_prefix = get_longest_path_prefix(paths, return_type='list')
+  for path in paths:
+    parts = path.split(os.sep)
+    if longest_prefix:
+      starting_i = len(longest_prefix)
+      if starting_i == len(parts) and keep_last:
+        starting_i -= 1
+      parts = parts[starting_i:]
+      yield os.sep.join(parts)
+    else:
+      yield path
+
+
+def get_longest_path_prefix(paths, return_type='list'):
+  """Get the longest shared starting path among a set of paths.
+  /home/me/.local/thing.txt, /home/me/.local/other.txt, /home/me/.cache/asdf.txt -> /home/me
+  path/to/place/, path/to/other/place/with/thing.txt, path/to/here.txt -> path/to
+  one/two/three, four/five/six.txt, four/seven/eight -> ''
+  Mixing absolute and relative paths isn't an exception, but it always returns ''.
+  If return_type == 'list', return the list of path components.
+  If return_type == 'str', return the components joined on os.sep."""
+  longest_prefix = None
+  for path in paths:
+    parts = path.split(os.sep)
+    if longest_prefix is None:
+      longest_prefix = parts
+    else:
+      new_longest = []
+      for part1, part2 in zip(parts, longest_prefix):
+        if part1 == part2:
+          new_longest.append(part1)
+      longest_prefix = new_longest
+  if return_type == 'list':
+    return longest_prefix
+  else:
+    return os.sep.join(longest_prefix)
