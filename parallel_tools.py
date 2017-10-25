@@ -157,22 +157,36 @@ def format_traceback(exception_data):
   return '\n'.join(lines)
 
 
-def scrub_tb_paths(exception_data):
+def scrub_tb_paths(exception_data, script_path=__file__):
   """Convenience function that applies scrub_paths() to the paths in the traceback of data returned
   from get_exception_data()."""
   trace_events = exception_data['traceback']
-  paths = scrub_paths([entry['file'] for entry in trace_events])
+  paths = scrub_paths([entry['file'] for entry in trace_events], script_path=script_path)
   for path, entry in zip(paths, trace_events):
     entry['file'] = path
   return exception_data
 
 
-def scrub_paths(paths):
+def scrub_paths(paths, script_path=__file__):
   """Do your best to remove sensitive data from paths."""
+  script_dirs = get_script_dirs(script_path=script_path)
   # First, remove the common start of the paths.
   paths = abbreviate_paths(paths, keep_last=True)
   for path in paths:
     parts = path.split(os.sep)
+    # If the start of the path matches our script_dir, just chop that off and return it.
+    matched = False
+    for script_dir in script_dirs.values():
+      if path.startswith(script_dir):
+        tail = path[len(script_dir)+1:]
+        # But keep our immediate directory name.
+        dirname = script_dir.split(os.sep)[-1]
+        path = os.path.join(dirname, tail)
+        matched = True
+        break
+    if matched:
+      yield path
+      continue
     # If the current user's username appears in the path, remove it and everything before it.
     username = getpass.getuser()
     for i, part in enumerate(parts):
@@ -188,6 +202,17 @@ def scrub_paths(paths):
       parts = path.split(os.sep)
       parts = parts[len(parts)-3:]
     yield os.sep.join(parts)
+
+
+def get_script_dirs(script_path=__file__):
+  """Try to get every possible representation of this script's directory.
+  Try every variation of absolute, relative, following symbolic links and not."""
+  script_dirs = {}
+  script_dirs['rel_literal'] = os.path.dirname(script_path)
+  script_dirs['abs_literal'] = os.path.abspath(script_dirs['rel_literal'])
+  script_dirs['abs_linked'] = os.path.dirname(os.path.realpath(script_path))
+  script_dirs['rel_linked'] = os.path.relpath(script_dirs['abs_linked'])
+  return script_dirs
 
 
 def abbreviate_paths(paths, keep_last=False):

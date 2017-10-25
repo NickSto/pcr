@@ -148,7 +148,7 @@ def main(argv):
       try:
         exception_data = getattr(exception, 'child_context', parallel_tools.get_exception_data())
         logging.critical(parallel_tools.format_traceback(exception_data))
-        exception_data = parallel_tools.scrub_tb_paths(exception_data)
+        exception_data = parallel_tools.scrub_tb_paths(exception_data, script_path=__file__)
       except Exception:
         exception_data = {}
         raise
