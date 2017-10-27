@@ -5,6 +5,7 @@
     <requirement type="package" version="2.0.6">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
+  <version_command>dunovo.py --version</version_command>
   <command detect_errors="exit_code">
     dunovo.py --galaxy $phone --processes \${GALAXY_SLOTS:-1} --min-reads $min_reads --qual $qual_thres --qual-format $qual_format --cons-thres $cons_thres --min-cons-reads $min_cons_reads '$input' --dcs1 '$dcs1' --dcs2 '$dcs2'
     #if $keep_sscs:

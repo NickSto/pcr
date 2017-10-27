@@ -6,6 +6,7 @@
     <requirement type="package" version="2.0.6">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
+  <version_command>align_families.py --version</version_command>
   <command detect_errors="exit_code">align_families.py --aligner $aligner --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
   </command>
   <inputs>

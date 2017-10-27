@@ -5,6 +5,7 @@
     <requirement type="package" version="2.0.6">dunovo</requirement>
   </requirements>
   <!-- TODO: Add dependency on coreutils to get paste? -->
+  <version_command>dunovo.py --version</version_command>
   <command detect_errors="exit_code">make-families.sh -t $taglen -i $invariant '$fastq1' '$fastq2' &gt; '$output'
   </command>
   <inputs>
