@@ -13,8 +13,9 @@
     baralign.sh '$input' refdir correct.sam
     && samtools view -S -f 256 correct.sam
     | correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos '$input' refdir/barcodes.fa
-    | sort
-    > '$output'
+      > families.corrected.tsv
+    && sort families.corrected.tsv
+      > '$output'
   ]]>
   </command>
   <inputs>
