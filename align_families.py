@@ -99,10 +99,16 @@ def main(argv):
     call = phone.Call(__file__, version.get_version(), platform=args.platform, test=args.test,
                       fail='warn')
     call.send_data('start')
-    if args.infile is sys.stdin:
-      data = {'stdin':True, 'input_size':None}
+    data = {
+      'stdin': args.infile is sys.stdin,
+      'aligner': args.aligner,
+      'processes': args.processes,
+      'queue_size': args.queue_size,
+    }
+    if data['stdin']:
+      data['input_size'] = None
     else:
-      data = {'stdin':False, 'input_size':os.path.getsize(args.infile.name)}
+      data['input_size'] = os.path.getsize(args.infile.name)
     call.send_data('prelim', run_data=data)
 
   # Execute as much of the script as possible in a try/except to catch any exception that occurs
