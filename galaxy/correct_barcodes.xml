@@ -10,8 +10,8 @@
   </requirements>
   <version_command>correct.py --version</version_command>
   <command detect_errors="exit_code"><![CDATA[
-    baralign.sh '$input' refdir
-    | samtools view -S -f 256 -
+    baralign.sh '$input' refdir correct.sam
+    && samtools view -S -f 256 correct.sam
     | correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos '$input' refdir/barcodes.fa
     | sort
     > '$output'
