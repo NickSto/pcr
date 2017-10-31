@@ -174,8 +174,9 @@ def main(argv):
           if this_barcode != barcode:
             # logging.debug('processing {}: {} orders ({})'.format(barcode, len(duplex),
             #               '/'.join([str(len(duplex[o])) for o in duplex])))
-            pool.compute(duplex, barcode)
-            stats['duplexes'] += 1
+            if barcode is not None:
+              pool.compute(duplex, barcode)
+              stats['duplexes'] += 1
             duplex = collections.OrderedDict()
           barcode = this_barcode
           order = this_order
@@ -265,9 +266,11 @@ def get_run_data(stats, pool, aligner, max_mem=None):
 
 def process_duplex(duplex, barcode, aligner='mafft'):
   output = ''
+  logging.debug('Starting {} (orders "{}")'.format(barcode, '", "'.join(map(str, duplex.keys()))))
   run_stats = {'time':0, 'runs':0, 'aligned_pairs':0, 'failures':0}
   orders = duplex.keys()
   if len(duplex) == 0 or None in duplex:
+    logging.warning('Empty duplex {}.'.format(barcode))
     return '', {}
   elif len(duplex) == 1:
     # If there's only one strand in the duplex, just process the first mate, then the second.
@@ -293,7 +296,7 @@ def process_duplex(duplex, barcode, aligner='mafft'):
     # Compile statistics.
     elapsed = time.time() - start
     pairs = len(family)
-    logging.info('{} sec for {} read pairs.'.format(elapsed, pairs))
+    logging.debug('{} sec for {} read pairs.'.format(elapsed, pairs))
     if pairs > 1:
       run_stats['time'] += elapsed
       run_stats['runs'] += 1
