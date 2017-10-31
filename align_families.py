@@ -49,7 +49,7 @@ def make_argparser():
               '6. read 2 name\n'
               '7. read 2 sequence\n'
               '8. read 2 quality scores'))
-  parser.add_argument('-a', '--aligner', choices=('mafft', 'kalign'), default='kalign',
+  parser.add_argument('-a', '--aligner', choices=('mafft', 'kalign', 'dummy'), default='kalign',
     help=wrap('The multiple sequence aligner to use. Default: %(default)s'))
   parser.add_argument('-p', '--processes', default=0,
     help=wrap('Number of worker subprocesses to use. If 0, no subprocesses will be started and '
@@ -337,6 +337,13 @@ def make_msa(family, mate, aligner='mafft'):
     return make_msa_mafft(family, mate)
   elif aligner == 'kalign':
     return make_msa_kalign(family, mate)
+  elif aligner == 'dummy':
+    return make_msa_dummy(family, mate)
+
+
+def make_msa_dummy(family, mate):
+  logging.info('Aligning with dummy.')
+  return [pair['seq'+mate] for pair in family]
 
 
 def make_msa_kalign(family, mate):
