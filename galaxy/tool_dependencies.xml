@@ -12,10 +12,10 @@
   <package name="networkx" version="1.10">
     <repository name="package_networkx_1_10" owner="iuc"/>
   </package>
-  <package name="dunovo" version="2.0.8">
+  <package name="dunovo" version="2.0.9">
     <install version="1.0">
       <actions>
-        <action type="download_by_url" sha256sum="4c105e29eff271b9e32f12c5d2862b717ba960981f4820dae26e159e2a0ed33d">https://github.com/galaxyproject/dunovo/archive/v2.0.8.tar.gz</action>
+        <action type="download_by_url">https://github.com/galaxyproject/dunovo/archive/v2.0.9.tar.gz</action>
         <action type="shell_command">make</action>
         <action type="move_directory_files">
           <source_directory>.</source_directory>

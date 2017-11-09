@@ -68,7 +68,7 @@ The `make` command is needed to compile the C modules and kalign, which are requ
 
 This example shows how to go from raw duplex sequencing data to the final duplex consensus sequences.
 
-Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts `align_families.py`, `dunovo.py`, `baralign.sh`, and `correct.py` should be on your `PATH`. Also, in the following command, replace `make-barcodes.awk` with the actual path to that script (included in this pipeline).
+Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts `align-families.py`, `make-consensi.py`, `baralign.sh`, and `correct.py` should be on your `PATH`. Also, in the following command, replace `make-barcodes.awk` with the actual path to that script (included in this pipeline).
 
 1. Sort the reads into families based on their barcodes and split the barcodes from the sequence.  
     ```bash
@@ -87,10 +87,10 @@ Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts
     ```
 
 3. Do multiple sequence alignments of the read families.  
-`$ align_families.py families.tsv > families.msa.tsv`
+`$ align-families.py families.tsv > families.msa.tsv`
 
 4. Build duplex consensus sequences from the aligned families.  
-`$ dunovo.py families.msa.tsv -1 duplex_1.fa -2 duplex_2.fa`
+`$ make-consensi.py families.msa.tsv -1 duplex_1.fa -2 duplex_2.fa`
 
 See all options for a given command by giving it the `-h` flag.
 
@@ -123,7 +123,7 @@ These commands takes the `families.tsv` file produced in the previous step, "cor
 
 #### 3. Do multiple sequence alignments of the read families.  
 
-`$ align_families.py families.tsv > families.msa.tsv`
+`$ align-families.py families.tsv > families.msa.tsv`
 
 This step aligns each family of reads, but it processes each strand separately. It can be parallelized with the `-p` option.
 
@@ -132,7 +132,7 @@ By default, this uses the Kalign2 multiple sequence alignment algorithm. Use `-a
 
 #### 4. Build duplex consensus sequences from the aligned families.  
 
-`$ dunovo.py families.msa.tsv -1 duplex_1.fa -2 duplex_2.fa`
+`$ make-consensi.py families.msa.tsv -1 duplex_1.fa -2 duplex_2.fa`
 
 This calls a consensus sequence from the multiple sequence alignments of the previous step. It does this in two steps: First, single-strand consensus sequences (SSCSs) are called from the family alignments, then duplex consensus sequences are called from pairs of SSCSs.
 
@@ -150,4 +150,4 @@ e.g.
 
 ### Known bugs
 
-Be aware that a [known bug](https://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool/1408476#1408476) in Python when using the [multiprocessing](https://docs.python.org/2/library/multiprocessing.html) module makes it impossible to kill a running process with the Ctrl+C keyboard command. So if you run `align_families.py` or `dunovo.py` in the foreground, you'll have to exit via Ctrl+Z to stop and background the job, then kill the process (e.g. with `$ kill %1`, if it's the only backgrounded job).
+Be aware that a [known bug](https://stackoverflow.com/questions/1408356/keyboard-interrupts-with-pythons-multiprocessing-pool/1408476#1408476) in Python when using the [multiprocessing](https://docs.python.org/2/library/multiprocessing.html) module makes it impossible to kill a running process with the Ctrl+C keyboard command. So if you run `align-families.py` or `make-consensi.py` in the foreground, you'll have to exit via Ctrl+Z to stop and background the job, then kill the process (e.g. with `$ kill %1`, if it's the only backgrounded job).

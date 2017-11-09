@@ -6,8 +6,8 @@
     <requirement type="package" version="2.0.8">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
-  <version_command>align_families.py --version</version_command>
-  <command detect_errors="exit_code">align_families.py --aligner $aligner --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
+  <version_command>align-families.py --version</version_command>
+  <command detect_errors="exit_code">align-families.py --aligner $aligner --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Input reads" help="with barcodes, grouped by family"/>

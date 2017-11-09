@@ -102,12 +102,12 @@ function errstats {
   errstats_overlap
 }
 
-# Run the dunovo.py-specific tests.
-function dunovo_all {
+# Run the make-consensi.py-specific tests.
+function consensi_all {
   declare -a tests
   i=1
   while read declare f test; do
-    if echo "$test" | grep -qE '^dunovo' && [[ $test != dunovo_all ]]; then
+    if echo "$test" | grep -qE '^consensi' && [[ $test != consensi_all ]]; then
       tests[$i]=$test
       i=$((i+1))
     fi
@@ -133,52 +133,54 @@ function barcodes {
     | diff -s - "$dirname/families.sort.tsv"
 }
 
-# align_families.py
+# align-families.py
 function align {
-  echo -e "\talign_families.py ::: families.sort.tsv:"
-  python "$dirname/../align_families.py" -q "$dirname/families.sort.tsv" \
+  echo -e "\talign-families.py ::: families.sort.tsv:"
+  python "$dirname/../align-families.py" -q "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
-# align_families.py with 3 processes
+# align-families.py with 3 processes
 function align_p3 {
-  echo -e "\talign_families.py -p 3 ::: families.sort.tsv:"
-  python "$dirname/../align_families.py" -q -p 3 "$dirname/families.sort.tsv" \
+  echo -e "\talign-families.py -p 3 ::: families.sort.tsv:"
+  python "$dirname/../align-families.py" -q -p 3 "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
-# align_families.py smoke test
+# align-families.py smoke test
 function align_smoke {
-  echo -e "\talign_families.py ::: smoke.families.tsv:"
-  python "$dirname/../align_families.py" -q "$dirname/smoke.families.tsv" \
+  echo -e "\talign-families.py ::: smoke.families.tsv:"
+  python "$dirname/../align-families.py" -q "$dirname/smoke.families.tsv" \
     | diff -s - "$dirname/smoke.families.aligned.tsv"
 }
 
-# dunovo.py defaults on toy data
-function dunovo {
-  _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa families.dcs_2.fa
+# make-consensi.py defaults on toy data
+function consensi {
+  _consensi families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa \
+    families.dcs_2.fa
 }
 
-# dunovo.py with 3 processes
-function dunovo_p3 {
-  _dunovo families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa families.dcs_2.fa -p 3
+# make-consensi.py with 3 processes
+function consensi_p3 {
+  _consensi families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa \
+    families.dcs_2.fa -p 3
 }
 
-# dunovo.py quality score consideration
-function dunovo_qual {
-  _dunovo qual.msa.tsv qual.10.sscs_1.fa qual.10.sscs_2.fa empty.txt empty.txt -q 10
-  _dunovo qual.msa.tsv qual.20.sscs_1.fa qual.20.sscs_2.fa empty.txt empty.txt -q 20
+# make-consensi.py quality score consideration
+function consensi_qual {
+  _consensi qual.msa.tsv qual.10.sscs_1.fa qual.10.sscs_2.fa empty.txt empty.txt -q 10
+  _consensi qual.msa.tsv qual.20.sscs_1.fa qual.20.sscs_2.fa empty.txt empty.txt -q 20
 }
 
-function dunovo_gapqual {
-  _dunovo gapqual.msa.tsv gapqual.sscs_1.fa gapqual.sscs_2.fa empty.txt empty.txt -q 25
+function consensi_gapqual {
+  _consensi gapqual.msa.tsv gapqual.sscs_1.fa gapqual.sscs_2.fa empty.txt empty.txt -q 25
 }
 
-function dunovo_consthres {
-  _dunovo cons.thres.msa.tsv cons.thres.0.5.sscs_1.fa cons.thres.0.5.sscs_2.fa \
+function consensi_consthres {
+  _consensi cons.thres.msa.tsv cons.thres.0.5.sscs_1.fa cons.thres.0.5.sscs_2.fa \
           cons.thres.0.5.dcs_1.fa cons.thres.0.5.dcs_2.fa \
           --min-cons-reads 3 --cons-thres 0.5
-  _dunovo cons.thres.msa.tsv cons.thres.0.7.sscs_1.fa cons.thres.0.7.sscs_2.fa \
+  _consensi cons.thres.msa.tsv cons.thres.0.7.sscs_1.fa cons.thres.0.7.sscs_2.fa \
           cons.thres.0.7.dcs_1.fa cons.thres.0.7.dcs_2.fa \
           --min-cons-reads 3 --cons-thres 0.7
 }
@@ -223,8 +225,8 @@ function errstats_overlap {
   fi
 }
 
-# utility function for all dunovo.py tests
-function _dunovo {
+# utility function for all make-consensi.py tests
+function _consensi {
   # Read required arguments.
   input=$1
   sscs1=$2
@@ -238,8 +240,8 @@ function _dunovo {
     args[$i]=${!i}
     i=$((i+1))
   done
-  echo -e "\tdunovo.py ${args[@]} ::: $input:"
-  python "$dirname/../dunovo.py" ${args[@]} "$dirname/$input" \
+  echo -e "\tmake-consensi.py ${args[@]} ::: $input:"
+  python "$dirname/../make-consensi.py" ${args[@]} "$dirname/$input" \
     --sscs1 "$dirname/families.tmp.sscs_1.fa" --sscs2 "$dirname/families.tmp.sscs_2.fa" \
     --dcs1  "$dirname/families.tmp.dcs_1.fa"  --dcs2  "$dirname/families.tmp.dcs_2.fa"
   diff -s "$dirname/families.tmp.sscs_1.fa" "$dirname/$sscs1"
