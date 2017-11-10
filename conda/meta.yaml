@@ -7,7 +7,7 @@ package:
 source:
   fn: v{{ version }}.tar.gz
   url: https://github.com/galaxyproject/dunovo/archive/v{{ version }}.tar.gz
-  sha256: [[TODO]]
+  sha256: 6f5295b8eae0e161ee3bd28829ca140657743c695624ffc7f467f13eab2c547c
 
 build:
   number: 0
