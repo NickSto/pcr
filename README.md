@@ -43,7 +43,7 @@ The barcode error correction script `correct.py` depends on the [networkx](https
 
     $ git clone --recursive https://github.com/galaxyproject/dunovo.git
     $ cd dunovo
-    $ git checkout release
+    $ git checkout master
     $ git submodule update --recursive
 
 #### Via GitHub webpage
