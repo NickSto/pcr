@@ -61,7 +61,7 @@ The columns are::
 
 **Alignments**
 
-The alignments are done using MAFFT, specifically the command
+When "MAFFT" is selected as the multiple sequence aligner, the alignments are done with the command
 ::
 
   $ mafft --nuc --quiet family.fa &gt; family.aligned.fa
