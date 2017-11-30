@@ -11,12 +11,12 @@ local:
 	gcc $(CFLAGS) consensus.c -o libconsensus.so
 
 kalign:
-	make -C kalign
+	if [ -f kalign/Makefile ]; then make -C kalign; fi
 
 clean: clean_local clean_kalign
 
 clean_kalign:
-	make -C kalign clean
+	if [ -f kalign/Makefile ]; then make -C kalign clean; fi
 
 clean_local:
 	rm -f libalign.so libswalign.so libseqtools.so libconsensus.so
