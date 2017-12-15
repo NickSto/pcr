@@ -11,7 +11,7 @@
   <version_command>correct.py --version</version_command>
   <command detect_errors="exit_code"><![CDATA[
     baralign.sh '$input' refdir correct.sam
-    && samtools view -S -f 256 correct.sam
+    && samtools view -S correct.sam
     | correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos '$input' refdir/barcodes.fa
       > families.corrected.tsv
     && sort families.corrected.tsv

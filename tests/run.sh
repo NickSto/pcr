@@ -50,7 +50,7 @@ function main {
 
   # If no tests were specified in arguments, do all tests.
   if ! [[ $gave_tests ]]; then
-    fail "Error: Please specify a valid test to run (or \"all\" to run all of them)."
+    fail "Error: Please specify a valid test to run. Use -h option to list them."
   fi
 }
 
@@ -189,8 +189,9 @@ function consensi_consthres {
 function baralign {
   echo -e "\tbaralign.sh ::: correct.families.tsv:"
   bash "$dirname/../baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
-    | diff -s "$dirname/correct.sam" -
-  rm -rf "$dirname/refdir.tmp"
+    | grep -v '^@PG' > "$dirname/correct.tmp.sam"
+  grep -v '^@PG' "$dirname/correct.sam" | diff -s - "$dirname/correct.tmp.sam"
+  rm -rf "$dirname/refdir.tmp" "$dirname/correct.tmp.sam"
 }
 
 # correct.py
