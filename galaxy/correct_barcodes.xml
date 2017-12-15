@@ -10,7 +10,7 @@
   </requirements>
   <version_command>correct.py --version</version_command>
   <command detect_errors="exit_code"><![CDATA[
-    baralign.sh '$input' refdir correct.sam
+    baralign.sh -c $chunkmbs -t \${GALAXY_SLOTS:-1} '$input' refdir correct.sam
     && samtools view -S correct.sam
     | correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos '$input' refdir/barcodes.fa
       > families.corrected.tsv
@@ -20,10 +20,13 @@
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Input reads" help="with barcodes, grouped by family"/>
-    <param name="dist" type="integer" value="1" min="1" label="Maximum edit distance" help="Only use alignments where the barcodes differ by at most these many errors."/>
+    <param name="dist" type="integer" value="3" min="1" label="Maximum differences" help="Only use alignments where the barcodes differ by at most these many errors. Note that raising this beyond 3 probably probably won't have an effect, because of the inherent limit in bowtie's ability to match up distant barcodes."/>
     <param name="mapq" type="integer" value="20" min="0" label="Minimum mapping quality" help="Only use alignments whose MAPQ is at least this."/>
     <param name="pos" type="integer" value="2" min="0" label="Minimum start offset" help="Ignore alignments where the start positions differ by more than this."/>
     <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the time and memory taken to process it, and the IP address of the machine running it. Also, if the tool fails, it will report the name of the exception thrown and the line of code it occurred in. The parameters and input/output dataset names are not sent. All the reporting and recording code is available at https://github.com/NickSto/ET"/>
+    <section name="advanced" title="Advanced Options" expanded="false">
+      <param name="chunkmbs" type="integer" value="512" min="16" label="bowtie --chunkmbs" help="This is the number of megabytes to give each bowtie thread for storing path descriptors. If you see warnings about &quot;Exhausted best-first chunk memory&quot; in stderr, you need to increase this."/>
+    </section>
   </inputs>
   <outputs>
     <data name="output" format="tabular"/>
@@ -32,7 +35,7 @@
 
 **What it does**
 
-This is for processing duplex sequencing data. This will correct duplex barcodes and create new, larger families. Errors in barcodes normally prevent them from being recognized as the same as the other barcodes in their family. Correcting these errors allows the original, full families to be reconstructed, saving reads which would otherwise be lost. This tool accomplishes this by doing an all vs. all alignment between the barcodes with bowtie2. This identifies ones which are identical except a few, small differences.
+This is for processing duplex sequencing data. This will correct duplex barcodes and create new, larger families. Errors in barcodes normally prevent them from being recognized as the same as the other barcodes in their family. Correcting these errors allows the original, full families to be reconstructed, saving reads which would otherwise be lost. This tool accomplishes this by doing an all vs. all alignment between the barcodes with bowtie. This identifies ones which are identical except a few, small differences.
 
 -----
 
