@@ -288,6 +288,9 @@ def parse_alignment(sam_file, pos_thres, mapq_thres, dist_thres):
     logging.debug('read {} -> ref {} (read seq {}):'.format(fields[2], fields[0], fields[9]))
     qname_str = fields[0]
     rname_str = fields[2]
+    if qname_str == rname_str:
+      logging.debug('\tRead aligned to itself.')
+      continue
     rname_fields = rname_str.split(':')
     if len(rname_fields) == 2 and rname_fields[1] == 'rev':
       reversed = True
