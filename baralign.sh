@@ -5,26 +5,34 @@ if [ x$BASH = x ] || [ ! $BASH_VERSINFO ] || [ $BASH_VERSINFO -lt 4 ]; then
 fi
 set -ue
 
+DefaultChunkMbs=512
 RefdirDefault=refdir
+RequiredCommands='bowtie bowtie-build samtools awk'
 
-Usage="Usage: \$ $(basename $0) [-R] families.tsv [refdir [outfile.sam|outfile.bam]]
+Usage="Usage: \$ $(basename $0) [options] families.tsv [refdir [outfile.sam|outfile.bam]]
 families.tsv: The families file produced by make-barcodes.awk and sorted.
-refdir: The directory to put the reference file (\"barcodes.fa\") and its index
-        files in. Default: \"$RefdirDefault\".
-outfile.bam: Print the output to this path. It will be in SAM format unless the
-             path ends in \".bam\". If not given, it will be printed to stdout
-             in SAM format.
--R: Don't include reversed barcodes (alpha+beta -> beta+alpha) in the alignment target."
+refdir:  The directory to put the reference file (\"barcodes.fa\") and its index
+         files in. Default: \"$RefdirDefault\".
+outfile: Print the output to this path. It will be in SAM format unless the
+         path ends in \".bam\". If not given, it will be printed to stdout
+         in SAM format.
+-R: Don't include reversed barcodes (alpha+beta -> beta+alpha) in the alignment target.
+-t: Number of threads for bowtie and bowtie-build to use (default: 1).
+-c: Number to pass to bowtie's --chunkmbs option (default: $DefaultChunkMbs)."
 
 function main {
 
   # Read in arguments and check them.
 
+  threads=1
   reverse=true
-  while getopts ":rh" opt; do
+  chunkmbs=$DefaultChunkMbs
+  while getopts ":rhc:t:" opt; do
   case "$opt" in
       r) reverse='';;
       h) fail "$Usage";;
+      t) threads=$OPTARG;;
+      c) chunkmbs=$OPTARG;;
     esac
   done
   # Get positional arguments.
@@ -33,6 +41,11 @@ function main {
   outfile=${@:$OPTIND+2:1}
 
   # Validate arguments.
+  if ! [[ $families ]]; then
+    fail "$Usage"$'\n'$'\n'"Error: Must provide an input families.tsv file."
+  elif ! [[ -f $families ]]; then
+    fail "Error: families_file \"$families\" not found."
+  fi
   if ! [[ $refdir ]]; then
     refdir=$RefdirDefault
   fi
@@ -40,15 +53,13 @@ function main {
     echo "Info: ref_dir \"$refdir\" not found. Creating.." >&2
     mkdir $refdir
   fi
-  if ! [[ -f $families ]]; then
-    fail "Error: families_file \"$families\" not found."
-  fi
   # Determine how and where to put the output.
   if [[ ${outfile:${#outfile}-4} == .bam ]]; then
     format=bam
   else
     format=sam
   fi
+  sam_outfile=
   outbase=$(echo $outfile | sed -E 's/\.bam$//')
   if [[ $outfile ]]; then
     if [[ -e $outfile ]]; then
@@ -58,22 +69,20 @@ function main {
       if [[ -e $outbase.sam ]] || [[ -e $outbase.bam.bai ]]; then
         fail "Error: A related filename already exists (.sam/.bam.bai)."
       fi
-      bowtie2_outargs="-S $outbase.sam"
+      sam_outfile="$outbase.sam"
     else
-      bowtie2_outargs="-S $outfile"
+      sam_outfile="$outfile"
     fi
-  else
-    bowtie2_outargs=
   fi
 
   # Check for required commands.
-  for cmd in bowtie2 bowtie2-build samtools awk; do
+  for cmd in $RequiredCommands; do
     if ! which $cmd >/dev/null 2>/dev/null; then
       fail "Error: command \"$cmd\" not found."
     fi
   done
 
-  echo "
+  echo "\
 families: $families
 refdir:   $refdir
 format:   $format
@@ -118,12 +127,14 @@ outbase:  $outbase" >&2
   fi
 
   # Perform alignment.
-  bowtie2-build --packed $refdir/barcodes-ref.fa $refdir/barcodes-ref >/dev/null
-  bowtie2 -a -x $refdir/barcodes-ref -f -U $refdir/barcodes.fa $bowtie2_outargs
-  if [[ $format == bam ]]; then
-    samtools view -Sb $outbase.sam | samtools sort -o - dummy > $outfile
+  bowtie-build -f --threads $threads --offrate 1 $refdir/barcodes-ref.fa $refdir/barcodes-ref >/dev/null
+  bowtie --chunkmbs $chunkmbs --threads $threads -f --sam --no-unal -a --best -v 3 \
+    $refdir/barcodes-ref $refdir/barcodes.fa $sam_outfile
+  if [[ $outfile ]] && [[ $format == bam ]]; then
+    samtools view -Sb $sam_outfile | samtools sort -o - dummy > $outfile
     if [[ -s $outfile ]]; then
       samtools index $outfile
+      rm $sam_outfile
     fi
   fi
   # Check output.
@@ -134,7 +145,7 @@ outbase:  $outbase" >&2
       fi
       echo "Success. Output located in \"$outfile\"." >&2
     else
-      echo "Warning: No output file \"$outfile\" found." >&2
+      fail "Warning: No output file \"$outfile\" found."
     fi
   fi
 }
