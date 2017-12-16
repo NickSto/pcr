@@ -3,7 +3,6 @@
   <description>of duplex sequencing reads</description>
   <requirements>
     <requirement type="package" version="1.1.2">bowtie</requirement>
-    <requirement type="package" version="0.1.18">samtools</requirement>
     <requirement type="package" version="1.10">networkx</requirement>
     <requirement type="package" version="2.0.10">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
@@ -11,11 +10,11 @@
   <version_command>correct.py --version</version_command>
   <command detect_errors="exit_code"><![CDATA[
     baralign.sh -c $chunkmbs -t \${GALAXY_SLOTS:-1} '$input' refdir correct.sam
-    && samtools view -S correct.sam
-    | correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos '$input' refdir/barcodes.fa
-      > families.corrected.tsv
+    && correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos
+         '$input' refdir/barcodes.fa correct.sam
+         > families.corrected.tsv
     && sort families.corrected.tsv
-      > '$output'
+         > '$output'
   ]]>
   </command>
   <inputs>

@@ -3,9 +3,6 @@
   <package name="bowtie" version="1.1.2">
     <repository name="package_bowtie_1_1_2" owner="iuc"/>
   </package>
-  <package name="samtools" version="0.1.18">
-    <repository name="package_samtools_0_1_18" owner="iuc"/>
-  </package>
   <package name="mafft" version="7.221">
     <repository name="mafft" owner="rnateam"/>
   </package>
