@@ -82,6 +82,24 @@ function main {
     fi
   done
 
+  # Check version of bowtie-build.
+  # Only version 1.2.1 and above had --threads option.
+  indexer_is_threaded=$(bowtie-build --version | awk '
+    $1 == "bowtie-build" && $2 == "version" {
+      split($3, fields, ".")
+      maj_min = fields[1] "." fields[2]
+      if (maj_min > 1.2) {
+        print "yes"
+      } else if (maj_min == 1.2 && fields[3] >= 1) {
+        print "yes"
+      }
+    }')
+  if [[ $indexer_is_threaded ]]; then
+    indexer_threads="--threads $threads"
+  else
+    indexer_threads=
+  fi
+
   echo "\
 families: $families
 refdir:   $refdir
@@ -127,7 +145,7 @@ outbase:  $outbase" >&2
   fi
 
   # Perform alignment.
-  bowtie-build -f --threads $threads --offrate 1 $refdir/barcodes-ref.fa $refdir/barcodes-ref >/dev/null
+  bowtie-build -f $indexer_threads --offrate 1 $refdir/barcodes-ref.fa $refdir/barcodes-ref '>/dev/null'
   bowtie --chunkmbs $chunkmbs --threads $threads -f --sam --no-unal -a --best -v 3 \
     $refdir/barcodes-ref $refdir/barcodes.fa $sam_outfile
   if [[ $outfile ]] && [[ $format == bam ]]; then
