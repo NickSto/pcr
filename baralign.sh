@@ -145,8 +145,8 @@ outbase:  $outbase" >&2
   fi
 
   # Perform alignment.
-  bowtie-build -f $indexer_threads --offrate 1 $refdir/barcodes-ref.fa $refdir/barcodes-ref '>/dev/null'
-  bowtie --chunkmbs $chunkmbs --threads $threads -f --sam --no-unal -a --best -v 3 \
+  bowtie-build -f $indexer_threads --offrate 1 $refdir/barcodes-ref.fa $refdir/barcodes-ref >/dev/null
+  bowtie --chunkmbs $chunkmbs --threads $threads -f --sam -a --best -v 3 \
     $refdir/barcodes-ref $refdir/barcodes.fa $sam_outfile
   if [[ $outfile ]] && [[ $format == bam ]]; then
     samtools view -Sb $sam_outfile | samtools sort -o - dummy > $outfile
