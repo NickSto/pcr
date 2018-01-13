@@ -17,10 +17,11 @@ def main(argv):
   parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG)
   parser.set_defaults(**OPT_DEFAULTS)
 
-  parser.add_argument('infile1', metavar='reads_1.fq',
+  parser.add_argument('infile1', metavar='reads_1.fq', nargs='?',
     help='The first mates in the read pairs.')
-  parser.add_argument('infile2', metavar='reads_2.fq',
+  parser.add_argument('infile2', metavar='reads_2.fq', nargs='?',
     help='The second mates in the read pairs.')
+  parser.add_argument('-f', '--families', metavar='families.tsv')
   parser.add_argument('-t', '--tag-length', dest='tag_len', type=int)
   parser.add_argument('-c', '--constant-length', dest='const_len', type=int)
   parser.add_argument('-C', '--computer', dest='human', action='store_false',
@@ -35,15 +36,35 @@ def main(argv):
 
   args = parser.parse_args(argv[1:])
 
-  with open(args.infile1) as infileh1:
-    with open(args.infile2) as infileh2:
-      barcodes = read_files(infileh1, infileh2, tag_len=args.tag_len, validate=args.validate)
+  if args.families:
+    barcodes = {}
+    with open(args.families) as infile:
+      barcodes = read_families(infile)
+  else:
+    if not (args.infile1 and args.infile2):
+      fail('Error: You must provide either a --families file or two fastq files.')
+    with open(args.infile1) as infileh1:
+      with open(args.infile2) as infileh2:
+        barcodes = read_fastqs(infileh1, infileh2, tag_len=args.tag_len, validate=args.validate)
 
   stats = get_stats(barcodes, tag_len=args.tag_len, min_reads=args.min_reads)
   print_stats(stats, min_reads=args.min_reads, human=args.human)
 
 
-def read_files(infileh1, infileh2, tag_len=12, validate=False):
+def read_families(infile):
+  barcodes = {}
+  for line in infile:
+    fields = line.split('\t')
+    barcode = fields[0]
+    order = fields[1]
+    try:
+      barcodes[(barcode, order)] += 1
+    except KeyError:
+      barcodes[(barcode, order)] = 1
+  return barcodes
+
+
+def read_fastqs(infileh1, infileh2, tag_len=12, validate=False):
   reader1 = getreads.getparser(infileh1, filetype='fastq').parser()
   reader2 = getreads.getparser(infileh2, filetype='fastq').parser()
   barcodes = {}
@@ -57,11 +78,16 @@ def read_files(infileh1, infileh2, tag_len=12, validate=False):
       raise getreads.FormatError('Read pair mismatch: "{}" and "{}"'.format(read1.id, read2.id))
     alpha = read1.seq[:tag_len]
     beta  = read2.seq[:tag_len]
-    barcode = alpha + beta
-    if barcode in barcodes:
-      barcodes[barcode] += 1
+    if alpha < beta:
+      order = 'ab'
+      barcode = alpha + beta
     else:
-      barcodes[barcode] = 1
+      order = 'ba'
+      barcode = beta + alpha
+    try:
+      barcodes[(barcode, order)] += 1
+    except KeyError:
+      barcodes[(barcode, order)] = 1
   return barcodes
 
 
@@ -71,18 +97,20 @@ def get_stats(barcodes, tag_len=12, min_reads=3):
   passed_duplexes = 0
   singletons = 0
   total_pairs = 0
-  for barcode, count in barcodes.items():
+  for (barcode, order), count in barcodes.items():
     total_pairs += count
     if count == 1:
       singletons += 1
     if count >= min_reads:
       passed_sscs += 1
-    alpha = barcode[:tag_len]
-    beta  = barcode[tag_len:]
-    reverse = beta + alpha
-    if reverse in barcodes:
+    if order == 'ab':
+      other_order = 'ba'
+    else:
+      other_order = 'ab'
+    if (barcode, other_order) in barcodes:
       duplexes += 1
-      if count >= min_reads and barcodes[reverse] >= min_reads:
+      other_count = barcodes[(barcode, other_order)]
+      if count >= min_reads and other_count >= min_reads:
         passed_duplexes += 1
   # Each full duplex ends up being counted twice. Halve it to get the real total.
   stats = {
