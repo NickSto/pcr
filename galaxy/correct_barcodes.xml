@@ -1,20 +1,20 @@
 <?xml version="1.0"?>
-<tool id="correct_barcodes" name="Du Novo: Correct barcodes" version="2.0.10">
+<tool id="correct_barcodes" name="Du Novo: Correct barcodes" version="2.0.12">
   <description>of duplex sequencing reads</description>
   <requirements>
     <requirement type="package" version="1.1.2">bowtie</requirement>
     <requirement type="package" version="1.10">networkx</requirement>
-    <requirement type="package" version="2.0.10">dunovo</requirement>
+    <requirement type="package" version="2.0.12">dunovo</requirement>
     <!-- TODO: require Python 2.7 -->
   </requirements>
   <version_command>correct.py --version</version_command>
   <command detect_errors="exit_code"><![CDATA[
     baralign.sh -c $advanced.chunkmbs -t \${GALAXY_SLOTS:-1} '$input' refdir correct.sam
     && correct.py --galaxy $phone --dist $dist --mapq $mapq --pos $pos
-         '$input' refdir/barcodes.fa correct.sam
-         > families.corrected.tsv
+      '$input' refdir/barcodes.fa correct.sam
+      > families.corrected.tsv
     && sort families.corrected.tsv
-         > '$output'
+      > '$output'
   ]]>
   </command>
   <inputs>
