@@ -552,30 +552,34 @@ class Node(object):
   def skipped_slots(self):
     """How many nodes had no child2, until the last tree level with child2s?
     This is a measure of how "compact" the tree is. Did it fill up every available child2 slot
-    before it ran out of new branches, or did it skip available slots?"""
+    before it ran out of new branches, or did it skip available slots?
+    Empty slots in the last level with child2s aren't counted, since the last level will always
+    have the same number of empty slots as the number of available slots minus the number of
+    remaining branches."""
     skipped = 0
-    skipped_buffer = 0
-    remainder = 0
+    skipped_this_level = 0
+    skipped_last_level = 0
     found_this_level = 0
-    last_level = -1
+    last_level = 0
     nodes = [self]
     while nodes:
       node = nodes.pop(0)
       if node.level != last_level:
         if found_this_level > 0:
-          remainder = skipped_buffer
+          skipped += skipped_last_level
+          skipped_last_level = 0
+        skipped_last_level += skipped_this_level
+        skipped_this_level = 0
         found_this_level = 0
         last_level = node.level
       if node.child1:
         nodes.append(node.child1)
       if node.child2:
         found_this_level += 1
-        skipped += skipped_buffer
-        skipped_buffer = 0
         nodes.append(node.child2)
       else:
-        skipped_buffer += 1
-    return skipped + remainder
+        skipped_this_level += 1
+    return skipped
 
   def print_tree(self):
     # We "write" strings to an output buffer instead of directly printing, so we can post-process
