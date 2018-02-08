@@ -474,7 +474,57 @@ def add_mutation_lists(subtree, fragments, mut_list1):
     node = node.get('child1')
 
 
-def build_pcr_tree(n_cycles, efficiency_decline, branch_rate):
+def build_pcr_tree(n_cycles, efficiency_decline, final_reads):
+  """Create a simulated descent lineage of how all the final PCR fragments are related.
+  Each node represents a fragment molecule at one stage of PCR.
+  Returns the root node.
+  efficiency_decline is the rate at which replication efficiency declines with each cycle.
+    That is, the efficiency is divided by this number every cycle. So it should usually be a little
+    greater than 1.
+  """
+  # Note: Remember that each child includes one of the strands of the parent. Only mutate an
+  #       appropriate proportion (half, but check that) of the children.
+  efficiency = 2
+  root = Node(leaves=final_reads, skipped_branches=0, taken_branches=0)
+  skipped_buffer = 0
+  leaves = [root]
+  for i in range(n_cycles):
+    # print('Cycle {}:'.format(i+1))
+    # print('  branch_rate: {}'.format(branch_rate))
+    # print('  efficiency:  {}'.format(efficiency))
+    new_leaves = []
+    for leaf in leaves:
+      if random.random() * 2 > efficiency:
+        # Molecule didn't replicate this cycle.
+        new_leaves.append(leaf)
+        continue
+      # Decide which branch each final read follows.
+      child1s = 0
+      child2s = 0
+      for read in range(leaf.leaves):
+        if random.random() < 0.5:
+          child1s += 1
+        else:
+          child2s += 1
+      if child1s == 0:
+        child1s, child2s = child2s, child1s
+      if child1s:
+        leaf.child1 = Node(parent=leaf, leaves=child1s)
+        new_leaves.append(leaf.child1)
+      if child2s:
+        leaf.child2 = Node(parent=leaf, leaves=child2s)
+        new_leaves.append(leaf.child2)
+        root.taken_branches += 1
+        root.skipped_branches += skipped_buffer
+        skipped_buffer = 0
+      else:
+        skipped_buffer += 1
+    leaves = new_leaves
+    efficiency = efficiency / efficiency_decline
+  return root
+
+
+def build_pcr_tree_old(n_cycles, efficiency_decline, branch_rate):
   """Create a simulated descent lineage of how all the final PCR fragments are related.
   Each node represents a fragment molecule at one stage of PCR.
   Returns the root node.
@@ -528,8 +578,8 @@ class Node(object):
   __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', 'skipped_branches', 'taken_branches',
                '_level', '_leaves')
 
-  def __init__(self, parent=None, child1=None, child2=None, seq=None, skipped_branches=None,
-               taken_branches=None):
+  def __init__(self, parent=None, child1=None, child2=None, seq=None, leaves=None,
+               skipped_branches=None, taken_branches=None):
     self.parent = parent
     self.child1 = child1
     self.child2 = child2
@@ -537,8 +587,8 @@ class Node(object):
     self.skipped_branches = skipped_branches
     self.taken_branches = taken_branches
     self.branch = None
+    self._leaves = leaves
     self._level = None
-    self._leaves = None
 
   @property
   def leaves(self):
@@ -571,7 +621,11 @@ class Node(object):
 
   @property
   def compactness(self):
-    return self.taken_branches / (self.taken_branches + self.skipped_branches)
+    total = self.taken_branches + self.skipped_branches
+    if total > 0:
+      return self.taken_branches / (self.taken_branches + self.skipped_branches)
+    elif self.leaves == 1:
+      return 1
 
   def print_tree(self):
     # We "write" strings to an output buffer instead of directly printing, so we can post-process
