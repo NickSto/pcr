@@ -489,7 +489,8 @@ def build_pcr_tree(n_cycles, efficiency_decline, branch_rate):
   # Note: Remember that each child includes one of the strands of the parent. Only mutate an
   #       appropriate proportion (half, but check that) of the children.
   efficiency = 2
-  root = Node()
+  root = Node(skipped_branches=0, taken_branches=0)
+  skipped_buffer = 0
   leaves = [root]
   for i in range(n_cycles):
     # print('Cycle {}:'.format(i+1))
@@ -504,8 +505,13 @@ def build_pcr_tree(n_cycles, efficiency_decline, branch_rate):
       leaf.child1 = Node(parent=leaf)
       new_leaves.append(leaf.child1)
       if random.random() < branch_rate:
+        root.taken_branches += 1
+        root.skipped_branches += skipped_buffer
+        skipped_buffer = 0
         leaf.child2 = Node(parent=leaf)
         new_leaves.append(leaf.child2)
+      else:
+        skipped_buffer += 1
     leaves = new_leaves
     #TODO: Determine how exactly the branch rate should decline.
     branch_rate = branch_rate / 2
@@ -514,18 +520,19 @@ def build_pcr_tree(n_cycles, efficiency_decline, branch_rate):
 
 
 class Node(object):
-  __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', '_level', '_skipped_branches',
-               '_total_slots', '_filled_slots')
+  __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', 'skipped_branches', 'taken_branches',
+               '_level')
 
-  def __init__(self, parent=None, child1=None, child2=None, seq=None):
+  def __init__(self, parent=None, child1=None, child2=None, seq=None, skipped_branches=None,
+               taken_branches=None):
     self.parent = parent
     self.child1 = child1
     self.child2 = child2
     self.seq = seq
+    self.skipped_branches = skipped_branches
+    self.taken_branches = taken_branches
     self.branch = None
     self._level = None
-    self._skipped_branches = None
-    self._total_slots = None
 
   @property
   def leaves(self):
@@ -551,70 +558,6 @@ class Node(object):
       else:
         self._level = self.parent.level + 1
     return self._level
-
-  @property
-  def total_slots(self):
-    if self._total_slots is None:
-      self._total_slots, self._filled_slots, self._skipped_branches = self._compute_compactness()
-    return self._total_slots
-
-  @property
-  def filled_slots(self):
-    if self._filled_slots is None:
-      self._total_slots, self._filled_slots, self._skipped_branches = self._compute_compactness()
-    return self._filled_slots
-
-  @property
-  def skipped_branches(self):
-    if self._skipped_branches is None:
-      self._total_slots, self._filled_slots, self._skipped_branches = self._compute_compactness()
-    return self._skipped_branches
-
-  def _compute_compactness(self):
-    """How compact is the tree below this node?
-    total_slots:
-    How many possible branch points are there in a binary tree up to the last tree level with
-    child2s?
-    skipped_branches:
-    How many nodes had no child2, until the last tree level with child2s? Did it take every
-    available child2 branch until there were no more final fragments to make, or did it skip
-    potential branch points? Empty child2s in the last level with full child2s aren't counted,
-    since the last level will always have the same number of empty child2s as the number of
-    available child2s minus the number of remaining branches."""
-    skipped = 0
-    skipped_this_level = 0
-    skipped_previously = 0
-    filled = 0
-    filled_this_level = 0
-    filled_previously = 0
-    total_slots = 0
-    slots_previously = 1
-    last_level = 0
-    nodes = [self]
-    while nodes:
-      node = nodes.pop(0)
-      if node.level != last_level:
-        if filled_this_level > 0:
-          total_slots += slots_previously
-          slots_previously = 0
-          filled += filled_previously
-          filled_previously = 0
-          skipped += skipped_previously
-          skipped_previously = 0
-        slots_previously += 2**last_level
-        skipped_previously += skipped_this_level
-        skipped_this_level = 0
-        filled_previously += filled_this_level
-        filled_this_level = 0
-        last_level = node.level
-      if node.child1:
-        nodes.append(node.child1)
-      if node.child2:
-        filled_this_level += 1
-        nodes.append(node.child2)
-      else:
-        skipped_this_level += 1
-    return total_slots, filled, skipped
 
   def print_tree(self):
     # We "write" strings to an output buffer instead of directly printing, so we can post-process
