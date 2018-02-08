@@ -514,7 +514,8 @@ def build_pcr_tree(n_cycles, efficiency_decline, branch_rate):
 
 
 class Node(object):
-  __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', '_level')
+  __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', '_level', '_skipped_branches',
+               '_total_slots')
 
   def __init__(self, parent=None, child1=None, child2=None, seq=None):
     self.parent = parent
@@ -523,6 +524,8 @@ class Node(object):
     self.seq = seq
     self.branch = None
     self._level = None
+    self._skipped_branches = None
+    self._total_slots = None
 
   @property
   def leaves(self):
@@ -549,26 +552,47 @@ class Node(object):
         self._level = self.parent.level + 1
     return self._level
 
-  def skipped_slots(self):
-    """How many nodes had no child2, until the last tree level with child2s?
-    This is a measure of how "compact" the tree is. Did it fill up every available child2 slot
-    before it ran out of new branches, or did it skip available slots?
-    Empty slots in the last level with child2s aren't counted, since the last level will always
-    have the same number of empty slots as the number of available slots minus the number of
-    remaining branches."""
+  @property
+  def total_slots(self):
+    if self._total_slots is None:
+      self._total_slots, self._skipped_branches = self._compute_compactness()
+    return self._total_slots
+
+  @property
+  def skipped_branches(self):
+    if self._skipped_branches is None:
+      self._total_slots, self._skipped_branches = self._compute_compactness()
+    return self._skipped_branches
+
+  def _compute_compactness(self):
+    """How compact is the tree below this node?
+    total_slots:
+    How many possible branch points are there in a binary tree up to the last tree level with
+    child2s?
+    skipped_branches:
+    How many nodes had no child2, until the last tree level with child2s? Did it take every
+    available child2 branch until there were no more final fragments to make, or did it skip
+    potential branch points? Empty child2s in the last level with full child2s aren't counted,
+    since the last level will always have the same number of empty child2s as the number of
+    available child2s minus the number of remaining branches."""
     skipped = 0
     skipped_this_level = 0
-    skipped_last_level = 0
+    skipped_previously = 0
     found_this_level = 0
+    total_slots = 0
+    slots_previously = 0
     last_level = 0
     nodes = [self]
     while nodes:
       node = nodes.pop(0)
       if node.level != last_level:
         if found_this_level > 0:
-          skipped += skipped_last_level
-          skipped_last_level = 0
-        skipped_last_level += skipped_this_level
+          total_slots += slots_previously
+          slots_previously = 0
+          skipped += skipped_previously
+          skipped_previously = 0
+        slots_previously += 2**last_level
+        skipped_previously += skipped_this_level
         skipped_this_level = 0
         found_this_level = 0
         last_level = node.level
@@ -579,7 +603,7 @@ class Node(object):
         nodes.append(node.child2)
       else:
         skipped_this_level += 1
-    return skipped
+    return total_slots, skipped
 
   def print_tree(self):
     # We "write" strings to an output buffer instead of directly printing, so we can post-process
