@@ -526,7 +526,7 @@ def build_pcr_tree(n_cycles, efficiency_decline, branch_rate):
 
 class Node(object):
   __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', 'skipped_branches', 'taken_branches',
-               '_level')
+               '_level', '_leaves')
 
   def __init__(self, parent=None, child1=None, child2=None, seq=None, skipped_branches=None,
                taken_branches=None):
@@ -538,20 +538,25 @@ class Node(object):
     self.taken_branches = taken_branches
     self.branch = None
     self._level = None
+    self._leaves = None
 
   @property
   def leaves(self):
-    leaves = 0
-    nodes = [self]
-    while nodes:
-      node = nodes.pop()
-      if node.child1:
-        nodes.append(node.child1)
-      if node.child2:
-        nodes.append(node.child2)
-      if not (node.child1 or node.child2):
-        leaves += 1
-    return leaves
+    """How many leaves are (at or) below this node?
+    If this is a leaf, return 1."""
+    if self._leaves is None:
+      self._leaves = 0
+      if self.child1:
+        self._leaves += self.child1.leaves
+      if self.child2:
+        self._leaves += self.child2.leaves
+      if not (self.child1 or self.child2):
+        self._leaves = 1
+    return self._leaves
+
+  @leaves.setter
+  def leaves(self, value):
+    self._leaves = value
 
   @property
   def level(self):
