@@ -564,6 +564,10 @@ class Node(object):
         self._level = self.parent.level + 1
     return self._level
 
+  @property
+  def compactness(self):
+    return self.taken_branches / (self.taken_branches + self.skipped_branches)
+
   def print_tree(self):
     # We "write" strings to an output buffer instead of directly printing, so we can post-process
     # the output. The buffer is a matrix of cells, each holding a string representing one element.
