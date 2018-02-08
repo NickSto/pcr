@@ -515,7 +515,7 @@ def build_pcr_tree(n_cycles, efficiency_decline, branch_rate):
 
 class Node(object):
   __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', '_level', '_skipped_branches',
-               '_total_slots')
+               '_total_slots', '_filled_slots')
 
   def __init__(self, parent=None, child1=None, child2=None, seq=None):
     self.parent = parent
@@ -555,13 +555,19 @@ class Node(object):
   @property
   def total_slots(self):
     if self._total_slots is None:
-      self._total_slots, self._skipped_branches = self._compute_compactness()
+      self._total_slots, self._filled_slots, self._skipped_branches = self._compute_compactness()
     return self._total_slots
+
+  @property
+  def filled_slots(self):
+    if self._filled_slots is None:
+      self._total_slots, self._filled_slots, self._skipped_branches = self._compute_compactness()
+    return self._filled_slots
 
   @property
   def skipped_branches(self):
     if self._skipped_branches is None:
-      self._total_slots, self._skipped_branches = self._compute_compactness()
+      self._total_slots, self._filled_slots, self._skipped_branches = self._compute_compactness()
     return self._skipped_branches
 
   def _compute_compactness(self):
@@ -578,32 +584,37 @@ class Node(object):
     skipped = 0
     skipped_this_level = 0
     skipped_previously = 0
-    found_this_level = 0
+    filled = 0
+    filled_this_level = 0
+    filled_previously = 0
     total_slots = 0
-    slots_previously = 0
+    slots_previously = 1
     last_level = 0
     nodes = [self]
     while nodes:
       node = nodes.pop(0)
       if node.level != last_level:
-        if found_this_level > 0:
+        if filled_this_level > 0:
           total_slots += slots_previously
           slots_previously = 0
+          filled += filled_previously
+          filled_previously = 0
           skipped += skipped_previously
           skipped_previously = 0
         slots_previously += 2**last_level
         skipped_previously += skipped_this_level
         skipped_this_level = 0
-        found_this_level = 0
+        filled_previously += filled_this_level
+        filled_this_level = 0
         last_level = node.level
       if node.child1:
         nodes.append(node.child1)
       if node.child2:
-        found_this_level += 1
+        filled_this_level += 1
         nodes.append(node.child2)
       else:
         skipped_this_level += 1
-    return total_slots, skipped
+    return total_slots, filled, skipped
 
   def print_tree(self):
     # We "write" strings to an output buffer instead of directly printing, so we can post-process
