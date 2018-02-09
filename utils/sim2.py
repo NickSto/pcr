@@ -474,10 +474,17 @@ def add_mutation_lists(subtree, fragments, mut_list1):
     node = node.get('child1')
 
 
-def build_pcr_tree(n_cycles, efficiency_decline, final_reads):
+def build_pcr_tree(n_cycles, final_reads, efficiency_decline):
   """Create a simulated descent lineage of how all the final PCR fragments are related.
   Each node represents a fragment molecule at one stage of PCR.
   Returns the root node.
+  n_cycles is the number of PCR cycles to simulate.
+  final_reads is the target number of observed PCR fragments (the duplex family size).
+    This is not guaranteed to return a tree with this many leaf nodes. Lower n_cycles, higher
+    final_reads, and higher efficiency_decline will make it more likely to fail to reach the
+    intended final_reads target (always resulting in fewer than intended).
+    For example, with 25 cycles and an efficiency_decline of 1.05, a final_reads target of 2 will
+    fail to be met about 0.015% of the time. A target of 3 fails about 0.04%, and for 20, it's 2%.
   efficiency_decline is the rate at which replication efficiency declines with each cycle.
     That is, the efficiency is divided by this number every cycle. So it should usually be a little
     greater than 1.
@@ -485,7 +492,7 @@ def build_pcr_tree(n_cycles, efficiency_decline, final_reads):
   # Note: Remember that each child includes one of the strands of the parent. Only mutate an
   #       appropriate proportion (half, but check that) of the children.
   efficiency = 2
-  root = Node(leaves=final_reads, skipped_branches=0, taken_branches=0)
+  root = Node(skipped_branches=0, taken_branches=0, reads_left=final_reads)
   skipped_buffer = 0
   leaves = [root]
   for i in range(n_cycles):
@@ -501,7 +508,7 @@ def build_pcr_tree(n_cycles, efficiency_decline, final_reads):
       # Decide which branch each final read follows.
       child1s = 0
       child2s = 0
-      for read in range(leaf.leaves):
+      for read in range(leaf.reads_left):
         if random.random() < 0.5:
           child1s += 1
         else:
@@ -509,10 +516,10 @@ def build_pcr_tree(n_cycles, efficiency_decline, final_reads):
       if child1s == 0:
         child1s, child2s = child2s, child1s
       if child1s:
-        leaf.child1 = Node(parent=leaf, leaves=child1s)
+        leaf.child1 = Node(parent=leaf, reads_left=child1s)
         new_leaves.append(leaf.child1)
       if child2s:
-        leaf.child2 = Node(parent=leaf, leaves=child2s)
+        leaf.child2 = Node(parent=leaf, reads_left=child2s)
         new_leaves.append(leaf.child2)
         root.taken_branches += 1
         root.skipped_branches += skipped_buffer
@@ -576,10 +583,10 @@ def build_pcr_tree_old(n_cycles, efficiency_decline, branch_rate):
 
 class Node(object):
   __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', 'skipped_branches', 'taken_branches',
-               '_level', '_leaves')
+               '_level', '_leaves', 'reads_left')
 
   def __init__(self, parent=None, child1=None, child2=None, seq=None, leaves=None,
-               skipped_branches=None, taken_branches=None):
+               skipped_branches=None, taken_branches=None, reads_left=None):
     self.parent = parent
     self.child1 = child1
     self.child2 = child2
@@ -589,6 +596,7 @@ class Node(object):
     self.branch = None
     self._leaves = leaves
     self._level = None
+    self.reads_left = reads_left
 
   @property
   def leaves(self):
