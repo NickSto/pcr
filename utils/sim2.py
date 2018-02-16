@@ -474,7 +474,7 @@ def add_mutation_lists(subtree, fragments, mut_list1):
     node = node.get('child1')
 
 
-def build_pcr_tree(n_cycles, final_reads, efficiency_decline):
+def build_pcr_tree(n_cycles, final_reads, efficiency_decline, max_cycles_factor=2):
   """Create a simulated descent lineage of how all the final PCR fragments are related.
   Each node represents a fragment molecule at one stage of PCR.
   Returns the root node.
@@ -494,11 +494,12 @@ def build_pcr_tree(n_cycles, final_reads, efficiency_decline):
   efficiency = 2
   root = Node(skipped_branches=0, taken_branches=0, reads_left=final_reads)
   skipped_buffer = 0
+  max_reads_left = final_reads
+  max_cycles = n_cycles * max_cycles_factor
   leaves = [root]
-  for i in range(n_cycles):
-    # print('Cycle {}:'.format(i+1))
-    # print('  branch_rate: {}'.format(branch_rate))
-    # print('  efficiency:  {}'.format(efficiency))
+  i = 0
+  while (i < n_cycles or max_reads_left > 1) and i < max_cycles:
+    i += 1
     new_leaves = []
     for leaf in leaves:
       if random.random() * 2 > efficiency:
@@ -518,15 +519,18 @@ def build_pcr_tree(n_cycles, final_reads, efficiency_decline):
       if child1s:
         leaf.child1 = Node(parent=leaf, reads_left=child1s)
         new_leaves.append(leaf.child1)
+        max_reads_left = max(max_reads_left, child1s)
       if child2s:
         leaf.child2 = Node(parent=leaf, reads_left=child2s)
         new_leaves.append(leaf.child2)
+        max_reads_left = max(max_reads_left, child2s)
         root.taken_branches += 1
         root.skipped_branches += skipped_buffer
         skipped_buffer = 0
       else:
         skipped_buffer += 1
     leaves = new_leaves
+    max_reads_left = max([node.reads_left for node in leaves])
     efficiency = efficiency / efficiency_decline
   return root
 
