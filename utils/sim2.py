@@ -5,7 +5,6 @@ import re
 import os
 import sys
 import copy
-import numpy
 import bisect
 import random
 import string
@@ -474,7 +473,24 @@ def add_mutation_lists(subtree, fragments, mut_list1):
     node = node.get('child1')
 
 
-def build_pcr_tree(n_cycles, final_reads, efficiency_decline, max_cycles_factor=2):
+def build_good_pcr_tree(n_cycles, final_reads, efficiency_decline, max_tries=100):
+  """Try to get a PCR tree with final_reads leaf nodes.
+  Retries up to max_tries times until success. If unsuccessful, returns the tree with the most leaf
+  nodes."""
+  best_tree = None
+  success = False
+  tries = 0
+  while not success and tries < max_tries:
+    tries += 1
+    tree = build_pcr_tree(n_cycles, final_reads, efficiency_decline)
+    if best_tree is None or tree.leaves > best_tree.leaves:
+      best_tree = tree
+    if best_tree.leaves == final_reads:
+      success = True
+  return best_tree
+
+
+def build_pcr_tree(n_cycles, final_reads, efficiency_decline):
   """Create a simulated descent lineage of how all the final PCR fragments are related.
   Each node represents a fragment molecule at one stage of PCR.
   Returns the root node.
@@ -494,12 +510,8 @@ def build_pcr_tree(n_cycles, final_reads, efficiency_decline, max_cycles_factor=
   efficiency = 2
   root = Node(skipped_branches=0, taken_branches=0, reads_left=final_reads)
   skipped_buffer = 0
-  max_reads_left = final_reads
-  max_cycles = n_cycles * max_cycles_factor
   leaves = [root]
-  i = 0
-  while (i < n_cycles or max_reads_left > 1) and i < max_cycles:
-    i += 1
+  for i in range(n_cycles):
     new_leaves = []
     for leaf in leaves:
       if random.random() * 2 > efficiency:
@@ -519,18 +531,15 @@ def build_pcr_tree(n_cycles, final_reads, efficiency_decline, max_cycles_factor=
       if child1s:
         leaf.child1 = Node(parent=leaf, reads_left=child1s)
         new_leaves.append(leaf.child1)
-        max_reads_left = max(max_reads_left, child1s)
       if child2s:
         leaf.child2 = Node(parent=leaf, reads_left=child2s)
         new_leaves.append(leaf.child2)
-        max_reads_left = max(max_reads_left, child2s)
         root.taken_branches += 1
         root.skipped_branches += skipped_buffer
         skipped_buffer = 0
       else:
         skipped_buffer += 1
     leaves = new_leaves
-    max_reads_left = max([node.reads_left for node in leaves])
     efficiency = efficiency / efficiency_decline
   return root
 
