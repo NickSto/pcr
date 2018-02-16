@@ -8,6 +8,7 @@ import copy
 import bisect
 import random
 import string
+import logging
 import numbers
 import tempfile
 import argparse
@@ -23,7 +24,8 @@ else:
 WGSIM_ID_REGEX = r'^(.+)_(\d+)_(\d+)_\d+:\d+:\d+_\d+:\d+:\d+_([0-9a-f]+)/[12]$'
 ARG_DEFAULTS = {'read_len':100, 'frag_len':400, 'n_frags':1000, 'out_format':'fasta',
                 'seq_error':0.001, 'pcr_error':0.001, 'cycles':25, 'indel_rate':0.15,
-                'ext_rate':0.3, 'seed':None, 'invariant':'TGACT', 'bar_len':12, 'fastq_qual':'I'}
+                'ext_rate':0.3, 'seed':None, 'invariant':'TGACT', 'bar_len':12, 'fastq_qual':'I',
+                'volume':logging.WARNING}
 USAGE = "%(prog)s [options]"
 DESCRIPTION = """Simulate a duplex sequencing experiment."""
 
@@ -75,6 +77,12 @@ def main(argv):
   parser.add_argument('-S', '--seed', type=int,
     help='Random number generator seed. By default, a random, 32-bit seed will be generated and '
          'logged to stdout.')
+  log = parser.add_argument_group('logging')
+  log.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
+    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+  log.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  log.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
+  log.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
   params = parser.add_argument_group('simulation parameters')
   params.add_argument('-n', '--n-frags', type=int,
     help='The number of original fragment molecules to simulate. The final number of reads will be '
@@ -103,6 +111,8 @@ def main(argv):
 
   # Parse and interpret arguments.
   args = parser.parse_args(argv[1:])
+  logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
+  tone_down_logger()
   assert args.ref or args.frag_file, 'You must provide either a reference or fragments file.'
   if args.seed is None:
     seed = random.randint(0, 2**31-1)
@@ -487,6 +497,8 @@ def build_good_pcr_tree(n_cycles, final_reads, efficiency_decline, max_tries=100
       best_tree = tree
     if best_tree.leaves == final_reads:
       success = True
+  logging.debug('Tries to get a good PCR tree: {}. Success: {}'
+                .format(tries, best_tree.leaves == final_reads))
   return best_tree
 
 
@@ -716,6 +728,14 @@ class Node(object):
         counter += 1
         node.child2.branch = counter
         nodes.append(node.child2)
+
+
+def tone_down_logger():
+  """Change the logging level names from all-caps to capitalized lowercase.
+  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
+  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
+    level_name = logging.getLevelName(level)
+    logging.addLevelName(level, level_name.capitalize())
 
 
 def fail(message):
