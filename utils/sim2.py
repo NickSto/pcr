@@ -118,7 +118,7 @@ def main(argv):
   args = parser.parse_args(argv[1:])
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
-  if not args.ref or args.frag_file:
+  if not (args.ref or args.frag_file):
     parser.print_usage()
     logging.critical('You must provide either a reference or fragments file.')
   if args.ref:
