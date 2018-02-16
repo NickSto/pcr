@@ -45,41 +45,32 @@ RAW_DISTRIBUTION = (
 
 def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION, usage=USAGE)
-  parser.add_argument('ref', metavar='ref.fa', nargs='?',
+  io = parser.add_argument_group('I/O')
+  io.add_argument('ref', metavar='ref.fa', nargs='?',
     help='Reference sequence. Omit if giving --frag-file.')
-  parser.add_argument('-1', '--reads1', type=argparse.FileType('w'),
+  io.add_argument('-1', '--reads1', type=argparse.FileType('w'),
     help='Write final mate 1 reads to this file.')
-  parser.add_argument('-2', '--reads2', type=argparse.FileType('w'),
+  io.add_argument('-2', '--reads2', type=argparse.FileType('w'),
     help='Write final mate 2 reads to this file.')
-  parser.add_argument('-o', '--out-format', choices=('fastq', 'fasta'), default='fasta',
+  io.add_argument('-o', '--out-format', choices=('fastq', 'fasta'), default='fasta',
     help='Default: %(default)s')
-  parser.add_argument('--stdout', action='store_true',
+  io.add_argument('--stdout', action='store_true',
     help='Print interleaved output reads to stdout.')
-  parser.add_argument('-m', '--mutations', type=argparse.FileType('w'),
+  io.add_argument('-m', '--mutations', type=argparse.FileType('w'),
     help='Write a log of the PCR and sequencing errors introduced to this file. Will overwrite any '
          'existing file at this path.')
-  parser.add_argument('-b', '--barcodes', type=argparse.FileType('w'),
+  io.add_argument('-b', '--barcodes', type=argparse.FileType('w'),
     help='Write a log of which barcodes were ligated to which fragments. Will overwrite any '
          'existing file at this path.')
-  parser.add_argument('--frag-file',
+  io.add_argument('--frag-file',
     help='The path of the FASTQ file of fragments. If --ref is given, these will be generated with '
          'wgsim and kept (normally a temporary file is used, then deleted). Note: the file will be '
          'overwritten! If --ref is not given, then this should be a file of already generated '
          'fragments, and they will be used instead of generating new ones.')
-  parser.add_argument('-Q', '--fastq-qual', default='I',
+  io.add_argument('-Q', '--fastq-qual', default='I',
     help='The quality score to assign to all bases in FASTQ output. Give a character or PHRED '
          'score (integer). A PHRED score will be converted using the Sanger offset (33). Default: '
          '"%(default)s"')
-  parser.add_argument('-S', '--seed', type=int,
-    help='Random number generator seed. By default, a random, 32-bit seed will be generated and '
-         'logged to stdout.')
-  log = parser.add_argument_group('Logging')
-  log.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
-    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  log.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
-    default=logging.WARNING)
-  log.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
-  log.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
   params = parser.add_argument_group('Simulation Parameters')
   params.add_argument('-n', '--n-frags', type=int, default=1000,
     help='The number of original fragment molecules to simulate. The final number of reads will be '
@@ -107,6 +98,17 @@ def make_argparser():
   params.add_argument('-I', '--invariant', default='TGACT',
     help='The invariant linker sequence between the barcode and sample sequence in each read. '
          'Default: %(default)s')
+  log = parser.add_argument_group('Logging')
+  log.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
+    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+  log.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
+    default=logging.WARNING)
+  log.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
+  log.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
+  misc = parser.add_argument_group('Misc')
+  misc.add_argument('-S', '--seed', type=int,
+    help='Random number generator seed. By default, a random, 32-bit seed will be generated and '
+         'logged to stdout.')
   return parser
 
 
