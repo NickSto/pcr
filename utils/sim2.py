@@ -24,6 +24,7 @@ else:
 WGSIM_ID_REGEX = r'^(.+)_(\d+)_(\d+)_\d+:\d+:\d+_\d+:\d+:\d+_([0-9a-f]+)/[12]$'
 ARG_DEFAULTS = {'read_len':100, 'frag_len':400, 'n_frags':1000, 'out_format':'fasta',
                 'seq_error':0.001, 'pcr_error':0.001, 'cycles':25, 'indel_rate':0.15,
+                'efficiency_decline':1.05,
                 'ext_rate':0.3, 'seed':None, 'invariant':'TGACT', 'bar_len':12, 'fastq_qual':'I',
                 'volume':logging.WARNING}
 USAGE = "%(prog)s [options]"
@@ -99,6 +100,8 @@ def main(argv):
     help='PCR error rate per base (0-1 proportion, not percent). Default: %(default)s')
   params.add_argument('-c', '--cycles', type=int,
     help='Number of PCR cycles to simulate. Default: %(default)s')
+  params.add_argument('-e', '--efficiency-decline', type=float,
+    help='Rate at which the PCR replication efficiency declines.')
   params.add_argument('-i', '--indel-rate', type=float,
     help='Fraction of errors which are indels. Default: %(default)s')
   params.add_argument('-E', '--extension-rate', dest='ext_rate', type=float,
@@ -140,7 +143,7 @@ def main(argv):
 
   # Create a temporary directory to do our work in. Then work inside a try so we can finally remove
   # the directory no matter what exceptions are encountered.
-  tmpfile = tempfile.NamedTemporaryFile(prefix='wgdsim.frags.')
+  tmpfile = tempfile.NamedTemporaryFile(prefix='wgdsim.frags.', delete=False)
   tmpfile.close()
   try:
     # Step 1: Use wgsim to create fragments from the reference.
@@ -184,10 +187,10 @@ def main(argv):
       #     - Important to have PCR errors shared between reads.
       # - For each read, determine which mutations it contains.
       #   - Use random.random() < mut_freq.
-      tree = get_good_pcr_tree(n_reads, args.cycles, 1000, max_diff=1)
+      tree = build_good_pcr_tree(args.cycles, n_reads, args.efficiency_decline, 1000)
       # Add errors to all children of original fragment.
-      subtree1 = tree.get('child1')
-      subtree2 = tree.get('child2')
+      subtree1 = tree.child1
+      subtree2 = tree.child2
       #TODO: Only simulate errors on portions of fragment that will become reads.
       add_pcr_errors(subtree1, '+', len(raw_frag_full), args.pcr_error, args.indel_rate, args.ext_rate)
       add_pcr_errors(subtree2, '-', len(raw_frag_full), args.pcr_error, args.indel_rate, args.ext_rate)
@@ -430,21 +433,21 @@ def add_pcr_errors(subtree, strand, read_len, error_rate, indel_rate, extension_
   # this function to process all second children.
   node = subtree
   while node:
-    node['strand'] = strand
-    node['errors'] = list(generate_mutations(read_len, error_rate, indel_rate, extension_rate))
-    add_pcr_errors(node.get('child2'), strand, read_len, error_rate, indel_rate, extension_rate)
-    node = node.get('child1')
+    node.strand = strand
+    node.errors = list(generate_mutations(read_len, error_rate, indel_rate, extension_rate))
+    add_pcr_errors(node.child2, strand, read_len, error_rate, indel_rate, extension_rate)
+    node = node.child1
 
 
 def apply_pcr_errors(subtree, seq):
   node = subtree
   while node:
-    for error in node.get('errors', ()):
+    for error in node.errors:
       seq = apply_mutation(error, seq)
-    if 'child1' not in node:
-      node['seq'] = seq
-    apply_pcr_errors(node.get('child2'), seq)
-    node = node.get('child1')
+    if not node.child1:
+      node.seq = seq
+    apply_pcr_errors(node.child2, seq)
+    node = node.child1
 
 
 def get_final_fragments(tree):
@@ -455,14 +458,12 @@ def get_final_fragments(tree):
   nodes = [tree]
   while nodes:
     node = nodes.pop()
-    child1 = node.get('child1')
-    if child1:
-      nodes.append(child1)
+    if node.child1:
+      nodes.append(node.child1)
     else:
-      fragments[node['id']] = {'seq':node['seq'], 'strand':node['strand']}
-    child2 = node.get('child2')
-    if child2:
-      nodes.append(child2)
+      fragments[node.leaf_id] = {'seq':node.seq, 'strand':node.strand}
+    if node.child2:
+      nodes.append(node.child2)
   return fragments
 
 
@@ -474,13 +475,13 @@ def add_mutation_lists(subtree, fragments, mut_list1):
   in chronological order."""
   node = subtree
   while node:
-    mut_list1.extend(node.get('errors', ()))
-    if 'child1' not in node:
-      fragments[node['id']]['mutations'] = mut_list1
-    if 'child2' in node:
+    mut_list1.extend(node.errors)
+    if not node.child1:
+      fragments[node.leaf_id]['mutations'] = mut_list1
+    if node.child2:
       mut_list2 = copy.deepcopy(mut_list1)
-      add_mutation_lists(node.get('child2'), fragments, mut_list2)
-    node = node.get('child1')
+      add_mutation_lists(node.child2, fragments, mut_list2)
+    node = node.child1
 
 
 def build_good_pcr_tree(n_cycles, final_reads, efficiency_decline, max_tries=100):
@@ -517,8 +518,6 @@ def build_pcr_tree(n_cycles, final_reads, efficiency_decline):
     That is, the efficiency is divided by this number every cycle. So it should usually be a little
     greater than 1.
   """
-  # Note: Remember that each child includes one of the strands of the parent. Only mutate an
-  #       appropriate proportion (half, but check that) of the children.
   efficiency = 2
   root = Node(skipped_branches=0, taken_branches=0, reads_left=final_reads)
   skipped_buffer = 0
@@ -553,6 +552,8 @@ def build_pcr_tree(n_cycles, final_reads, efficiency_decline):
         skipped_buffer += 1
     leaves = new_leaves
     efficiency = efficiency / efficiency_decline
+  for i, leaf in enumerate(leaves):
+    leaf.leaf_id = i
   return root
 
 
@@ -607,8 +608,8 @@ def build_pcr_tree_old(n_cycles, efficiency_decline, branch_rate):
 
 
 class Node(object):
-  __slots__ = ('parent', 'child1', 'child2', 'seq', 'branch', 'skipped_branches', 'taken_branches',
-               '_level', '_leaves', 'reads_left')
+  __slots__ = ('parent', 'child1', 'child2', 'seq', 'errors', 'strand', 'branch', 'leaf_id',
+               'skipped_branches', 'taken_branches', '_level', '_leaves', 'reads_left')
 
   def __init__(self, parent=None, child1=None, child2=None, seq=None, leaves=None,
                skipped_branches=None, taken_branches=None, reads_left=None):
@@ -622,6 +623,9 @@ class Node(object):
     self._leaves = leaves
     self._level = None
     self.reads_left = reads_left
+    self.errors = []
+    self.strand = None
+    self.leaf_id = None
 
   @property
   def leaves(self):
