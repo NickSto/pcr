@@ -27,7 +27,9 @@ ARG_DEFAULTS = {'read_len':100, 'frag_len':400, 'n_frags':1000, 'out_format':'fa
                 'efficiency_decline':1.05,
                 'ext_rate':0.3, 'seed':None, 'invariant':'TGACT', 'bar_len':12, 'fastq_qual':'I',
                 'volume':logging.WARNING}
-USAGE = "%(prog)s [options]"
+USAGE = """%(prog)s [options] ref.fa [--frag-file frags.fq] -1 reads_1.fa -2 reads_2.fa
+or     %(prog)s [options] ref.fa --stdout > reads.fa
+or     %(prog)s [options] --frag-file frags.fq -1 reads_1.fa -2 reads_2.fa"""
 DESCRIPTION = """Simulate a duplex sequencing experiment."""
 
 RAW_DISTRIBUTION = (
@@ -48,14 +50,14 @@ RAW_DISTRIBUTION = (
 
 def main(argv):
 
-  parser = argparse.ArgumentParser(description=DESCRIPTION)
+  parser = argparse.ArgumentParser(description=DESCRIPTION, usage=USAGE)
   parser.set_defaults(**ARG_DEFAULTS)
 
   parser.add_argument('ref', metavar='ref.fa', nargs='?',
     help='Reference sequence. Omit if giving --frag-file.')
-  parser.add_argument('out1', type=argparse.FileType('w'),
+  parser.add_argument('-1', '--reads1', type=argparse.FileType('w'),
     help='Write final mate 1 reads to this file.')
-  parser.add_argument('out2', type=argparse.FileType('w'),
+  parser.add_argument('-2', '--reads2', type=argparse.FileType('w'),
     help='Write final mate 2 reads to this file.')
   parser.add_argument('-o', '--out-format', choices=('fastq', 'fasta'))
   parser.add_argument('--stdout', action='store_true',
@@ -116,19 +118,26 @@ def main(argv):
   args = parser.parse_args(argv[1:])
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
-  assert args.ref or args.frag_file, 'You must provide either a reference or fragments file.'
+  if not args.ref or args.frag_file:
+    parser.print_usage()
+    logging.critical('You must provide either a reference or fragments file.')
+  if args.ref:
+    if not os.path.isfile(args.ref):
+      fail('Error: reference file {!r} not found.'.format(args.ref))
+    if not os.path.getsize(args.ref):
+      fail('Error: reference file {!r} empty (0 bytes).'.format(args.ref))
   if args.seed is None:
     seed = random.randint(0, 2**31-1)
-    sys.stderr.write('seed: {}\n'.format(seed))
+    logging.info('seed: {}\n'.format(seed))
   else:
     seed = args.seed
   random.seed(seed)
   if args.stdout:
-    out1 = sys.stdout
-    out2 = sys.stdout
+    reads1 = sys.stdout
+    reads2 = sys.stdout
   else:
-    out1 = args.out1
-    out2 = args.out2
+    reads1 = args.reads1
+    reads2 = args.reads2
   if isinstance(args.fastq_qual, numbers.Integral):
     assert args.fastq_qual >= 0, '--fastq-qual cannot be negative.'
     fastq_qual = chr(args.fastq_qual + 33)
@@ -151,7 +160,7 @@ def main(argv):
       frag_file = args.frag_file
     else:
       frag_file = tmpfile.name
-    if args.ref and os.path.isfile(args.ref) and os.path.getsize(args.ref):
+    if args.ref:
       #TODO: Check exit status
       #TODO: Check for wgsim on the PATH.
       # Set error and mutation rates to 0 to just slice sequences out of the reference without
@@ -227,11 +236,11 @@ def main(argv):
         if fragment['strand'] == '-':
           read1_seq, read2_seq = read2_seq, read1_seq
         if args.out_format == 'fasta':
-          out1.write('>{}\n{}\n'.format(read_id, read1_seq))
-          out2.write('>{}\n{}\n'.format(read_id, read2_seq))
+          reads1.write('>{}\n{}\n'.format(read_id, read1_seq))
+          reads2.write('>{}\n{}\n'.format(read_id, read2_seq))
         elif args.out_format == 'fastq':
-          out1.write('@{}\n{}\n+\n{}\n'.format(read_id, read1_seq, qual_line))
-          out2.write('@{}\n{}\n+\n{}\n'.format(read_id, read2_seq, qual_line))
+          reads1.write('@{}\n{}\n+\n{}\n'.format(read_id, read1_seq, qual_line))
+          reads2.write('@{}\n{}\n+\n{}\n'.format(read_id, read2_seq, qual_line))
 
   finally:
     try:
@@ -243,10 +252,12 @@ def main(argv):
 def run_command(*command, **kwargs):
   """Run a command and return the exit code.
   run_command('echo', 'hello')
-  Will print the command to stderr before running, unless "silent" is set to True."""
+  If "echo" keyword argument is set to True, this will print the command to stdout first."""
   command_strs = map(str, command)
-  if not kwargs.get('silent'):
-    sys.stderr.write('$ '+' '.join(command_strs)+'\n')
+  command_line = '$ '+' '.join(command_strs)+'\n'
+  logging.info(command_line)
+  if kwargs.get('echo'):
+    print(command_line)
   devnull = open(os.devnull, 'w')
   try:
     exit_status = subprocess.call(map(str, command), stderr=devnull)
@@ -743,8 +754,11 @@ def tone_down_logger():
 
 
 def fail(message):
-  sys.stderr.write(message+"\n")
-  sys.exit(1)
+  logging.critical(message)
+  if __name__ == '__main__':
+    sys.exit(1)
+  else:
+    raise Exception('Unrecoverable error')
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv))
