@@ -22,11 +22,6 @@ if PY3:
 else:
   REVCOMP_TABLE = string.maketrans('acgtrymkbdhvACGTRYMKBDHV', 'tgcayrkmvhdbTGCAYRKMVHDB')
 WGSIM_ID_REGEX = r'^(.+)_(\d+)_(\d+)_\d+:\d+:\d+_\d+:\d+:\d+_([0-9a-f]+)/[12]$'
-ARG_DEFAULTS = {'read_len':100, 'frag_len':400, 'n_frags':1000, 'out_format':'fasta',
-                'seq_error':0.001, 'pcr_error':0.001, 'cycles':25, 'indel_rate':0.15,
-                'efficiency_decline':1.05,
-                'ext_rate':0.3, 'seed':None, 'invariant':'TGACT', 'bar_len':12, 'fastq_qual':'I',
-                'volume':logging.WARNING}
 USAGE = """%(prog)s [options] ref.fa [--frag-file frags.fq] -1 reads_1.fa -2 reads_2.fa
 or     %(prog)s [options] ref.fa --stdout > reads.fa
 or     %(prog)s [options] --frag-file frags.fq -1 reads_1.fa -2 reads_2.fa"""
@@ -48,18 +43,16 @@ RAW_DISTRIBUTION = (
 )
 
 
-def main(argv):
-
+def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION, usage=USAGE)
-  parser.set_defaults(**ARG_DEFAULTS)
-
   parser.add_argument('ref', metavar='ref.fa', nargs='?',
     help='Reference sequence. Omit if giving --frag-file.')
   parser.add_argument('-1', '--reads1', type=argparse.FileType('w'),
     help='Write final mate 1 reads to this file.')
   parser.add_argument('-2', '--reads2', type=argparse.FileType('w'),
     help='Write final mate 2 reads to this file.')
-  parser.add_argument('-o', '--out-format', choices=('fastq', 'fasta'))
+  parser.add_argument('-o', '--out-format', choices=('fastq', 'fasta'), default='fasta',
+    help='Default: %(default)s')
   parser.add_argument('--stdout', action='store_true',
     help='Print interleaved output reads to stdout.')
   parser.add_argument('-m', '--mutations', type=argparse.FileType('w'),
@@ -73,48 +66,53 @@ def main(argv):
          'wgsim and kept (normally a temporary file is used, then deleted). Note: the file will be '
          'overwritten! If --ref is not given, then this should be a file of already generated '
          'fragments, and they will be used instead of generating new ones.')
-  parser.add_argument('-Q', '--fastq-qual',
+  parser.add_argument('-Q', '--fastq-qual', default='I',
     help='The quality score to assign to all bases in FASTQ output. Give a character or PHRED '
          'score (integer). A PHRED score will be converted using the Sanger offset (33). Default: '
          '"%(default)s"')
   parser.add_argument('-S', '--seed', type=int,
     help='Random number generator seed. By default, a random, 32-bit seed will be generated and '
          'logged to stdout.')
-  log = parser.add_argument_group('logging')
+  log = parser.add_argument_group('Logging')
   log.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  log.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL)
+  log.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
+    default=logging.WARNING)
   log.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
   log.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
-  params = parser.add_argument_group('simulation parameters')
-  params.add_argument('-n', '--n-frags', type=int,
+  params = parser.add_argument_group('Simulation Parameters')
+  params.add_argument('-n', '--n-frags', type=int, default=1000,
     help='The number of original fragment molecules to simulate. The final number of reads will be '
          'this multiplied by the average number of reads per family. If you provide fragments with '
          '--frag-file, the script will still only read in the number specified here. Default: '
          '%(default)s')
-  params.add_argument('-r', '--read-len', type=int,
+  params.add_argument('-r', '--read-len', type=int, default=100,
     help='Default: %(default)s')
-  params.add_argument('-f', '--frag-len', type=int,
+  params.add_argument('-f', '--frag-len', type=int, default=400,
     help='Default: %(default)s')
-  params.add_argument('-s', '--seq-error', type=float,
+  params.add_argument('-s', '--seq-error', type=float, default=0.001,
     help='Sequencing error rate per base (0-1 proportion, not percent). Default: %(default)s')
-  params.add_argument('-p', '--pcr-error', type=float,
+  params.add_argument('-p', '--pcr-error', type=float, default=0.001,
     help='PCR error rate per base (0-1 proportion, not percent). Default: %(default)s')
-  params.add_argument('-c', '--cycles', type=int,
+  params.add_argument('-c', '--cycles', type=int, default=25,
     help='Number of PCR cycles to simulate. Default: %(default)s')
-  params.add_argument('-e', '--efficiency-decline', type=float,
+  params.add_argument('-e', '--efficiency-decline', type=float, default=1.05,
     help='Rate at which the PCR replication efficiency declines.')
-  params.add_argument('-i', '--indel-rate', type=float,
+  params.add_argument('-i', '--indel-rate', type=float, default=0.15,
     help='Fraction of errors which are indels. Default: %(default)s')
-  params.add_argument('-E', '--extension-rate', dest='ext_rate', type=float,
+  params.add_argument('-E', '--extension-rate', dest='ext_rate', type=float, default=0.3,
     help='Probability an indel is extended. Default: %(default)s')
-  params.add_argument('-B', '--bar-len', type=int,
+  params.add_argument('-B', '--bar-len', type=int, default=12,
     help='Length of the barcodes to generate. Default: %(default)s')
-  params.add_argument('-I', '--invariant',
+  params.add_argument('-I', '--invariant', default='TGACT',
     help='The invariant linker sequence between the barcode and sample sequence in each read. '
          'Default: %(default)s')
+  return parser
 
+
+def main(argv):
   # Parse and interpret arguments.
+  parser = make_argparser()
   args = parser.parse_args(argv[1:])
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
