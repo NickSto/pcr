@@ -124,7 +124,7 @@ def main(argv):
 
   invariant_rc = get_revcomp(args.invariant)
 
-  # Create a temporary director to do our work in. Then work inside a try so we can finally remove
+  # Create a temporary directory to do our work in. Then work inside a try so we can finally remove
   # the directory no matter what exceptions are encountered.
   tmpfile = tempfile.NamedTemporaryFile(prefix='wgdsim.frags.')
   tmpfile.close()
@@ -546,7 +546,7 @@ def build_pcr_tree(n_reads, n_cycles):
         if candidates:
           relative_i = random.choice(candidates)
           relative = branches[relative_i]
-          # Have we already passed this fragmentfragment on this cycle?
+          # Have we already passed this fragment on this cycle?
           if relative['cycle'] == cycle:
             # If we've already passed it, we're looking at the fragment's parent. We want the child.
             relative = relative['child1']
