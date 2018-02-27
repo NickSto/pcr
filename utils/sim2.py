@@ -181,6 +181,8 @@ def main(argv):
       barcode1 = get_rand_seq(args.bar_len)
       barcode2 = get_rand_seq(args.bar_len)
       barcode2_rc = get_revcomp(barcode2)
+      #TODO: Vary the size of the fragment.
+      #      Could add ~100bp to frag_len arg to wgsim, then randomly select a subsequence here.
       raw_frag_full = barcode1 + args.invariant + raw_fragment.seq + invariant_rc + barcode2
 
       # Step 2: Determine how many reads to produce from each fragment.
