@@ -466,15 +466,21 @@ def print_corrected_output(families_file, corrections, reversed_barcodes, prepen
         # If so, then switch the order field.
         corrected['reversed'] += 1
         if order == 'ab':
-          fields[1] = 'ba'
+          correct_order = 'ba'
         else:
-          fields[1] = 'ab'
+          correct_order = 'ab'
+      else:
+        correct_order = order
     else:
       correct_barcode = raw_barcode
+      correct_order = order
+    # Add the corrected barcode and order to the output.
     if prepend:
       fields.insert(0, correct_barcode)
+      fields.insert(1, correct_order)
     else:
       fields[0] = correct_barcode
+      fields[1] = correct_order
     if output:
       print(*fields, sep='\t')
   families_file.close()
