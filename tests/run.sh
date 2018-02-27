@@ -7,7 +7,7 @@ fi
 dirname=$(dirname $0)
 
 USAGE="Usage: \$ $(basename $0) [options] [test1 [test2]]"
-
+cmd_prefix="$dirname/../"
 
 function main {
 
@@ -26,6 +26,8 @@ function main {
           echo "Meta tests:" >&2
           list_meta_tests >&2
           exit 1;;
+        -p)
+          cmd_prefix=;;
         -q)
           verbose='';;
         -v)
@@ -136,21 +138,21 @@ function barcodes {
 # align-families.py
 function align {
   echo -e "\talign-families.py ::: families.sort.tsv:"
-  python "$dirname/../align-families.py" -q "$dirname/families.sort.tsv" \
+  "${cmd_prefix}align-families.py" -q "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align-families.py with 3 processes
 function align_p3 {
   echo -e "\talign-families.py -p 3 ::: families.sort.tsv:"
-  python "$dirname/../align-families.py" -q -p 3 "$dirname/families.sort.tsv" \
+  "${cmd_prefix}align-families.py" -q -p 3 "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align-families.py smoke test
 function align_smoke {
   echo -e "\talign-families.py ::: smoke.families.tsv:"
-  python "$dirname/../align-families.py" -q "$dirname/smoke.families.tsv" \
+  "${cmd_prefix}align-families.py" -q "$dirname/smoke.families.tsv" \
     | diff -s - "$dirname/smoke.families.aligned.tsv"
 }
 
@@ -188,7 +190,7 @@ function consensi_consthres {
 # baralign.sh
 function baralign {
   echo -e "\tbaralign.sh ::: correct.families.tsv:"
-  bash "$dirname/../baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
+  "${cmd_prefix}baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
     | grep -v '^@PG' > "$dirname/correct.tmp.sam"
   grep -v '^@PG' "$dirname/correct.sam" | diff -s - "$dirname/correct.tmp.sam"
   rm -rf "$dirname/refdir.tmp" "$dirname/correct.tmp.sam"
@@ -197,28 +199,28 @@ function baralign {
 # correct.py
 function correct {
   echo -e "\tcorrect.py ::: correct.sam"
-  "$dirname/../correct.py" "$dirname/correct.families.tsv" \
+  "${cmd_prefix}correct.py" "$dirname/correct.families.tsv" \
       "$dirname/correct.barcodes.fa" "$dirname/correct.sam" \
     | diff -s "$dirname/correct.families.corrected.tsv" -
 }
 
 function stats_diffs {
   echo -e "\tstats.py diffs ::: gaps.msa.tsv:"
-  python "$dirname/../utils/stats.py" diffs "$dirname/gaps.msa.tsv" \
+  "$dirname/../utils/stats.py" diffs "$dirname/gaps.msa.tsv" \
     | diff -s - "$dirname/gaps-diffs.out.tsv"
 }
 
 function errstats_simple {
   echo -e "\terrstats.py ::: families.msa.tsv:"
-  python "$dirname/../utils/errstats.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.out.tsv"
-  python "$dirname/../utils/errstats.py" -R "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.out.tsv"
-  python "$dirname/../utils/errstats.py" -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-a.out.tsv"
-  python "$dirname/../utils/errstats.py" -R -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.-a.out.tsv"
+  "$dirname/../utils/errstats.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.out.tsv"
+  "$dirname/../utils/errstats.py" -R "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.out.tsv"
+  "$dirname/../utils/errstats.py" -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-a.out.tsv"
+  "$dirname/../utils/errstats.py" -R -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.-a.out.tsv"
 }
 
 function errstats_overlap {
   echo -e "\terrstats.py ::: families.overlap.msa.tsv"
-  python "$dirname/../utils/errstats.py" --dedup --min-reads 3 --bam "$dirname/families.overlap.sscs.bam" \
+  "$dirname/../utils/errstats.py" --dedup --min-reads 3 --bam "$dirname/families.overlap.sscs.bam" \
     "$dirname/families.overlap.msa.tsv" --overlap-stats "$dirname/overlaps.tmp.tsv" >/dev/null
   diff -s "$dirname/overlaps.tmp.tsv" "$dirname/families.overlap.overlaps.expected.tsv"
   if [[ -f "$dirname/overlaps.tmp.tsv" ]]; then
@@ -242,7 +244,7 @@ function _consensi {
     i=$((i+1))
   done
   echo -e "\tmake-consensi.py ${args[@]} ::: $input:"
-  python "$dirname/../make-consensi.py" ${args[@]} "$dirname/$input" \
+  "${cmd_prefix}make-consensi.py" ${args[@]} "$dirname/$input" \
     --sscs1 "$dirname/families.tmp.sscs_1.fa" --sscs2 "$dirname/families.tmp.sscs_2.fa" \
     --dcs1  "$dirname/families.tmp.dcs_1.fa"  --dcs2  "$dirname/families.tmp.dcs_2.fa"
   diff -s "$dirname/families.tmp.sscs_1.fa" "$dirname/$sscs1"
