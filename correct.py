@@ -134,9 +134,9 @@ def main(argv):
     corrections = make_correction_table(graph, family_counts, args.choose_by)
 
     logging.info('Reading the families.tsv again to print corrected output..')
-    families = open_as_text_or_gzip(args.families.name)
-    print_corrected_output(families, corrections, reversed_barcodes, args.prepend, args.limit,
-                           args.output)
+    with open_as_text_or_gzip(args.families.name) as families:
+      print_corrected_output(families, corrections, reversed_barcodes, args.prepend, args.limit,
+                             args.output)
 
     run_time = int(time.time() - start_time)
     max_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
@@ -483,7 +483,6 @@ def print_corrected_output(families_file, corrections, reversed_barcodes, prepen
       fields[1] = correct_order
     if output:
       print(*fields, sep='\t')
-  families_file.close()
   if corrections_in_this_family:
     corrected['reads'] += corrections_in_this_family
     corrected['barcodes'] += 1
