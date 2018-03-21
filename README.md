@@ -1,6 +1,6 @@
 # Du Novo
 
-This is a pipeline for processing of duplex sequencing data without the use of a reference genome.
+This is a pipeline for processing duplex sequencing data without the use of a reference genome.
 
 The pipeline was designed for use with the duplex method described in [Kennedy *et al.* 2014](https://dx.doi.org/10.1038/nprot.2014.170), but the assumptions are relatively minimal, so you should be able to apply it to variants of the protocol.
 
@@ -19,22 +19,27 @@ We created a comprehensive [tutorial](https://github.com/galaxyproject/dunovo/wi
 
 #### Required
 
-The pipeline requires a Unix operating system and Python version 2.7.
+The pipeline requires a Unix operating system and Python version 2.7. Linux is recommended. OS X and BSD may work, but are untested.
 
-It also requires several standard Unix tools. Version numbers in parentheses are what the software was tested with, but other versions likely work:
- -  [gcc](https://gcc.gnu.org/) (4.8.4)
- -  [make](https://www.gnu.org/software/make/) (3.81)
- -  [bash](https://www.gnu.org/software/bash/bash.html) (4.0)
- -  [awk](https://www.gnu.org/software/gawk/) (4.0.1)
- -  [paste](https://www.gnu.org/software/coreutils/coreutils.html) (8.21)
- -  [sort](https://www.gnu.org/software/coreutils/coreutils.html) (8.21)
+It also requires several standard Unix tools. Version numbers in parentheses are what the software was tested with, but other versions likely work. These must be available on your [`$PATH`](https://en.wikipedia.org/wiki/Search_path):  
+ -  the [`gcc`](https://gcc.gnu.org/) command (4.8.4)
+ -  the [`make`](https://www.gnu.org/software/make/) command (3.81)
+ -  the [`bash`](https://www.gnu.org/software/bash/bash.html) command (4.0)
+ -  the [`awk`](https://www.gnu.org/software/gawk/) command (4.0.1)
+ -  the [`paste`](https://www.gnu.org/software/coreutils/coreutils.html) command (8.21)
+ -  the [`sort`](https://www.gnu.org/software/coreutils/coreutils.html) command (8.21)
 
 
 #### Optional
 
-If you plan to use the [MAFFT](http://mafft.cbrc.jp/alignment/software/) multiple sequence alignment algorithm, you must install it (versions v7.271 and v7.123b will work) and make the `mafft` command available on your [`PATH`](https://en.wikipedia.org/wiki/Search_path).
+To use `align-families.py`'s `-a mafft` option, this must be available on your `$PATH`:  
+ - the [`mafft`](http://mafft.cbrc.jp/alignment/software/) command (v7.271 or v7.123b)
 
-The barcode error correction script `correct.py` depends on the [networkx](https://pypi.python.org/pypi/networkx) Python module (version 1.9, 1.10, or 1.11), the [bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/index.shtml) read mapper, and [samtools](http://samtools.sourceforge.net/). The commands `bowtie2`, `bowtie2-build`, and `samtools` must be on your `PATH`.
+To use the barcode error correction script `correct.py`, the following modules must be available from Python and the commands must be on your `$PATH`:
+ - the [networkx](https://pypi.python.org/pypi/networkx) Python module (1.9, 1.10, or 1.11)
+ - the [`bowtie`](http://bowtie-bio.sourceforge.net/index.shtml) command (1.2.1.1) (nothing below 1.1.2 is confirmed to work)
+ - the [`bowtie-build`](http://bowtie-bio.sourceforge.net/index.shtml) command (1.2.1.1) (same)
+ - the [`samtools`](http://samtools.sourceforge.net/) command (0.1.18)
 
 
 ### Download
