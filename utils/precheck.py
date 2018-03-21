@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import division
+from __future__ import print_function
 import sys
 import argparse
 import getreads
@@ -129,18 +130,18 @@ def print_stats(stats, min_reads=3, human=True):
   all_stats = stats.copy()
   all_stats.update({'min_reads':min_reads})
   if human:
-    print """Total read pairs:\t{pairs}
+    print("""Total read pairs:\t{pairs}
 Unique barcodes:\t{barcodes}
 Avg # of read pairs per barcode:\t{avg_pairs}
 Singletons:\t{singletons}
 Barcodes with reverse (other strand) present:\t{duplexes}
 Passing threshold of {min_reads} reads per single-strand consensus:
 \tSingle-strand consensus sequences:\t{passed_sscs}
-\tDuplex consensus sequences:\t{passed_duplexes}""".format(**all_stats)
+\tDuplex consensus sequences:\t{passed_duplexes}""".format(**all_stats))
   else:
     for stat in ('pairs', 'barcodes', 'avg_pairs', 'singletons', 'duplexes', 'min_reads',
                  'passed_sscs', 'passed_duplexes'):
-      print '{}\t{}'.format(stat, all_stats[stat])
+      print('{}\t{}'.format(stat, all_stats[stat]))
 
 
 def fail(message):
