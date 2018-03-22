@@ -21,10 +21,12 @@ function main {
       case "$arg" in
         -h)
           echo "$USAGE" >&2
-          echo "Currently valid tests:" >&2
-          list_tests >&2
           echo "Meta tests:" >&2
           list_meta_tests >&2
+          echo "Active tests:" >&2
+          list_active_tests >&2
+          echo "Inactive tests:" >&2
+          list_inactive_tests >&2
           exit 1;;
         -p)
           cmd_prefix=;;
@@ -61,12 +63,30 @@ function fail {
   exit 1
 }
 
-function list_tests {
+function list_active_tests {
   while read declare f test; do
-    # Filter out functions that aren't tests.
-    if echo "$initial_declarations_plus_meta" | grep -qF "declare -f $test"; then
+    if echo "$initial_declarations_plus_meta" | grep -qE "^declare -f $test\$"; then
+      # Filter out regular functions and meta tests.
       continue
     elif echo "$test" | grep -qE '^_'; then
+      # Filter out functions starting with an underscore.
+      continue
+    elif ! echo "$all_declarations_minus_inactive" | grep -qE "^declare -f $test\$"; then
+      # Filter out inactive tests.
+      continue
+    else
+      echo "  $test"
+    fi
+  done < <(declare -F)
+}
+
+function list_inactive_tests {
+  while read declare f test; do
+    if echo "$all_declarations_minus_inactive" | grep -qE "^declare -f $test\$"; then
+      # Filter out regular functions, meta tests, and active tests.
+      continue
+    elif echo "$test" | grep -qE '^_'; then
+      # Filter out functions starting with an underscore.
       continue
     else
       echo "  $test"
@@ -75,10 +95,22 @@ function list_tests {
 }
 
 function list_meta_tests {
+  # Want to list these tests in this order (as long as they exist).
+  for test in all active inactive; do
+    if declare -F | grep -qE "^declare -f $test\$"; then
+      echo "  $test"
+    fi
+  done
+  # Then programmatically list the rest.
   while read declare f test; do
-    if echo "$initial_declarations" | grep -qF "declare -f $test"; then
+    if echo "$initial_declarations" | grep -qE "^declare -f $test\$"; then
+      # Filter out regular functions.
       continue
-    elif echo "$initial_declarations_plus_meta" | grep -qF "declare -f $test"; then
+    elif echo -e "all\nactive\ninactive" | grep -qE "^$test\$"; then
+      # Filter out the fixed-order ones we already listed.
+      continue
+    elif echo "$initial_declarations_plus_meta" | grep -qE "^declare -f $test\$"; then
+      # If it matches this list but not the last, it's a meta test.
       echo "  $test"
     fi
   done < <(declare -F)
@@ -93,7 +125,18 @@ initial_declarations=$(declare -F)
 
 # Run all tests.
 function all {
-  for test in $(list_tests); do
+  active
+  inactive
+}
+
+function active {
+  for test in $(list_active_tests); do
+    $test
+  done
+}
+
+function inactive {
+  for test in $(list_inactive_tests); do
     $test
   done
 }
@@ -209,6 +252,9 @@ function stats_diffs {
   "$dirname/../utils/stats.py" diffs "$dirname/gaps.msa.tsv" \
     | diff -s - "$dirname/gaps-diffs.out.tsv"
 }
+
+# All tests below here are considered inactive.
+all_declarations_minus_inactive=$(declare -F)
 
 function errstats_simple {
   echo -e "\terrstats.py ::: families.msa.tsv:"

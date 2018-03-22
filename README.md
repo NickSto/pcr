@@ -69,6 +69,19 @@ In the end, the organization and names of the three directories should look like
 
 The `make` command is needed to compile the C modules and kalign, which are required. You need to be in the root source directory (where the file `Makefile` is) before running the command.
 
+### Testing
+
+To check for obvious problems with the installation, you can run:
+
+    $ tests/run.sh active
+
+Successful results should look like
+
+            [script] ::: [input file]:
+    Files [test output] and [expected output] are identical
+
+This won't catch every installation problem, but it should check that the basics are working.
+
 
 ### Usage
 
