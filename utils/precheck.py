@@ -71,8 +71,8 @@ def read_fastqs(infileh1, infileh2, tag_len=12, validate=False):
   barcodes = {}
   while True:
     try:
-      read1 = reader1.next()
-      read2 = reader2.next()
+      read1 = next(reader1)
+      read2 = next(reader2)
     except StopIteration:
       break
     if validate and read1.id != read2.id:
