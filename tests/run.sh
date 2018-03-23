@@ -253,6 +253,14 @@ function stats_diffs {
     | diff -s - "$dirname/gaps-diffs.out.tsv"
 }
 
+
+function precheck {
+  echo -e "\tprecheck.py ::: families.raw_[12].fq"
+  "$dirname/../utils/precheck.py" "$dirname/families.raw_1.fq" "$dirname/families.raw_2.fq" \
+    | diff -s - "$dirname/families.precheck.tsv"
+}
+
+
 # All tests below here are considered inactive.
 all_declarations_minus_inactive=$(declare -F)
 

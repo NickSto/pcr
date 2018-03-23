@@ -1,0 +1,9 @@
+16	Total pairs of reads in input
+5	Unique barcodes (double-standed families)
+7	Unique barcode/order combinations (single-stranded families)
+3.2	Average # of read pairs per unique barcode
+3	Single-strand singletons (only 1 read with that barcode/order combination)
+1	Double-strand singletons (only 1 read with that barcode)
+2	Families with both strands present
+4	Single-strand families with > 3 reads
+1	Families with both strands with > 3 reads
