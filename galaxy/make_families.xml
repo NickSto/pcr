@@ -11,8 +11,8 @@
   <inputs>
     <param name="fastq1" type="data" format="fastq" label="Sequencing reads, mate 1"/>
     <param name="fastq2" type="data" format="fastq" label="Sequencing reads, mate 2"/>
-    <param name="taglen" type="integer" value="12" min="0" label="Tag length" help="length of each random barcode on the ends of the fragments"/>
-    <param name="invariant" type="integer" value="5" min="0" label="Invariant sequence length" help="length of the sequence between the tag and actual sample sequence (the restriction site, normally)"/>
+    <param name="taglen" type="integer" value="12" min="0" label="Tag length" help="Length of each random barcode on the ends of the fragments."/>
+    <param name="invariant" type="integer" value="5" min="0" label="Invariant sequence length" help="Length of the sequence between the tag and actual sample sequence (the restriction site, normally)."/>
   </inputs>
   <outputs>
     <data name="output" format="tabular"/>
