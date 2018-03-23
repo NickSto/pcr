@@ -19,33 +19,36 @@ STATS = collections.OrderedDict(
     ('passed_duplexes',     'Families with both strands with > {min_reads} reads'),
   )
 )
-OPT_DEFAULTS = {'tag_len':12, 'const_len':5, 'min_reads':3, 'human':True}
-USAGE = "%(prog)s [options]"
+USAGE = """$ %(prog)s [options] reads_1.fq reads_2.fq
+       $ %(prog)s [options] -f families.tsv"""
 DESCRIPTION = """Print statistics on the raw duplex sequencing reads."""
 EPILOG = """Warning: This tracks all barcodes in a dict, so it can take a lot of memory. A guideline
 is about 200 bytes per (12bp) tag. For example, it took about 800MB for a 10GB, 32 million read
 dataset with an average of 4 pairs per barcode."""
 
 
-def main(argv):
-
-  parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG)
-  parser.set_defaults(**OPT_DEFAULTS)
-
+def make_argparser():
+  parser = argparse.ArgumentParser(usage=USAGE, description=DESCRIPTION, epilog=EPILOG)
   parser.add_argument('infile1', metavar='reads_1.fq', nargs='?',
     help='The first mates in the read pairs.')
   parser.add_argument('infile2', metavar='reads_2.fq', nargs='?',
     help='The second mates in the read pairs.')
-  parser.add_argument('-f', '--families', metavar='families.tsv')
-  parser.add_argument('-t', '--tag-length', dest='tag_len', type=int)
-  parser.add_argument('-c', '--constant-length', dest='const_len', type=int)
-  parser.add_argument('-m', '--min-reads', type=int,
+  parser.add_argument('-f', '--families', metavar='families.tsv',
+    help='The output of make-families.awk.')
+  parser.add_argument('-t', '--tag-length', dest='tag_len', type=int, default=12)
+  parser.add_argument('-c', '--constant-length', dest='const_len', type=int, default=5)
+  parser.add_argument('-m', '--min-reads', type=int, default=3,
     help='The minimum number of reads required in each single-stranded family. Default: '
          '%(default)s')
   parser.add_argument('-v', '--validate', action='store_true',
     help='Check the id\'s of the reads to make sure the correct reads are mated into pairs (the '
          'id\'s of mates must be identical).')
+  return parser
 
+
+def main(argv):
+
+  parser = make_argparser()
   args = parser.parse_args(argv[1:])
 
   if args.families:
