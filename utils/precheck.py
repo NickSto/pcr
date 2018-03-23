@@ -39,9 +39,6 @@ def main(argv):
   parser.add_argument('-f', '--families', metavar='families.tsv')
   parser.add_argument('-t', '--tag-length', dest='tag_len', type=int)
   parser.add_argument('-c', '--constant-length', dest='const_len', type=int)
-  parser.add_argument('-C', '--computer', dest='human', action='store_false',
-    help='Print results in computer-readable format. This will be a tab-delimited version of the '
-         'output, in the same order, but with two columns: value and stat name.')
   parser.add_argument('-m', '--min-reads', type=int,
     help='The minimum number of reads required in each single-stranded family. Default: '
          '%(default)s')
@@ -63,7 +60,7 @@ def main(argv):
         barcodes = read_fastqs(infileh1, infileh2, tag_len=args.tag_len, validate=args.validate)
 
   stats = get_stats(barcodes, stats_key=STATS, min_reads=args.min_reads)
-  print_stats(stats, stats_key=STATS, human=args.human)
+  print_stats(stats, stats_key=STATS)
 
 
 def read_families(infile):
@@ -134,13 +131,9 @@ def get_stats(barcodes, stats_key=STATS, min_reads=3):
   return stats
 
 
-def print_stats(stats, stats_key=STATS, human=True):
-  if human:
-    for stat_name, stat_description in stats_key.items():
-      print(stats[stat_name], stat_description.format(**stats), sep='\t')
-  else:
-    for stat_name in stats_key:
-      print(stats[stat_name], stat_name, sep='\t')
+def print_stats(stats, stats_key=STATS):
+  for stat_name, stat_description in stats_key.items():
+    print(stats[stat_name], stat_description.format(**stats), sep='\t')
 
 
 def fail(message):
