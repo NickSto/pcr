@@ -3,8 +3,22 @@ from __future__ import division
 from __future__ import print_function
 import sys
 import argparse
+import collections
 import getreads
 
+STATS = collections.OrderedDict(
+  (
+    ('pairs',       'Total pairs of reads in input'),
+    ('barcodes',    'Unique barcodes (double-standed families)'),
+    ('bar_orders',  'Unique barcode/order combinations (single-stranded families)'),
+    ('avg_pairs',   'Average # of read pairs per unique barcode'),
+    ('stranded_singletons', 'Single-strand singletons (only 1 read with that barcode/order combination)'),
+    ('duplex_singletons',   'Double-strand singletons (only 1 read with that barcode)'),
+    ('duplexes',    'Families with both strands present'),
+    ('passed_sscs', 'Single-strand families with > {min_reads} reads'),
+    ('passed_duplexes',     'Families with both strands with > {min_reads} reads'),
+  )
+)
 OPT_DEFAULTS = {'tag_len':12, 'const_len':5, 'min_reads':3, 'human':True}
 USAGE = "%(prog)s [options]"
 DESCRIPTION = """Print statistics on the raw duplex sequencing reads."""
@@ -27,7 +41,7 @@ def main(argv):
   parser.add_argument('-c', '--constant-length', dest='const_len', type=int)
   parser.add_argument('-C', '--computer', dest='human', action='store_false',
     help='Print results in computer-readable format. This will be a tab-delimited version of the '
-         'output, in the same order, but with two columns: stat name and value.')
+         'output, in the same order, but with two columns: value and stat name.')
   parser.add_argument('-m', '--min-reads', type=int,
     help='The minimum number of reads required in each single-stranded family. Default: '
          '%(default)s')
@@ -48,27 +62,24 @@ def main(argv):
       with open(args.infile2) as infileh2:
         barcodes = read_fastqs(infileh1, infileh2, tag_len=args.tag_len, validate=args.validate)
 
-  stats = get_stats(barcodes, tag_len=args.tag_len, min_reads=args.min_reads)
-  print_stats(stats, min_reads=args.min_reads, human=args.human)
+  stats = get_stats(barcodes, stats_key=STATS, min_reads=args.min_reads)
+  print_stats(stats, stats_key=STATS, human=args.human)
 
 
 def read_families(infile):
-  barcodes = {}
+  barcodes = collections.Counter()
   for line in infile:
     fields = line.split('\t')
     barcode = fields[0]
     order = fields[1]
-    try:
-      barcodes[(barcode, order)] += 1
-    except KeyError:
-      barcodes[(barcode, order)] = 1
+    barcodes[(barcode, order)] += 1
   return barcodes
 
 
 def read_fastqs(infileh1, infileh2, tag_len=12, validate=False):
   reader1 = getreads.getparser(infileh1, filetype='fastq').parser()
   reader2 = getreads.getparser(infileh2, filetype='fastq').parser()
-  barcodes = {}
+  barcodes = collections.Counter()
   while True:
     try:
       read1 = next(reader1)
@@ -85,63 +96,51 @@ def read_fastqs(infileh1, infileh2, tag_len=12, validate=False):
     else:
       order = 'ba'
       barcode = beta + alpha
-    try:
-      barcodes[(barcode, order)] += 1
-    except KeyError:
-      barcodes[(barcode, order)] = 1
+    barcodes[(barcode, order)] += 1
   return barcodes
 
 
-def get_stats(barcodes, tag_len=12, min_reads=3):
-  passed_sscs = 0
-  duplexes = 0
-  passed_duplexes = 0
-  singletons = 0
-  total_pairs = 0
+def get_stats(barcodes, stats_key=STATS, min_reads=3):
+  stats = {'min_reads':min_reads}
+  for stat_name in stats_key:
+    stats[stat_name] = 0
+  barcode_counts = collections.Counter()
   for (barcode, order), count in barcodes.items():
-    total_pairs += count
+    stats['pairs'] += count
+    barcode_counts[barcode] += count
     if count == 1:
-      singletons += 1
+      stats['stranded_singletons'] += 1
     if count >= min_reads:
-      passed_sscs += 1
+      stats['passed_sscs'] += 1
     if order == 'ab':
       other_order = 'ba'
     else:
       other_order = 'ab'
     if (barcode, other_order) in barcodes:
-      duplexes += 1
       other_count = barcodes[(barcode, other_order)]
-      if count >= min_reads and other_count >= min_reads:
-        passed_duplexes += 1
-  # Each full duplex ends up being counted twice. Halve it to get the real total.
-  stats = {
-    'pairs':total_pairs,
-    'barcodes':len(barcodes),
-    'avg_pairs':total_pairs/len(barcodes),
-    'singletons':singletons,
-    'duplexes':duplexes//2,
-    'passed_sscs':passed_sscs*2,
-    'passed_duplexes':passed_duplexes,
-  }
+      # The loop encounters both strands of each duplex, so to only count each duplex once,
+      # only increment on one of the strands (ab).
+      if order == 'ab':
+        stats['duplexes'] += 1
+        if count >= min_reads and other_count >= min_reads:
+          stats['passed_duplexes'] += 1
+  stats['barcodes'] = len(barcode_counts)
+  stats['bar_orders'] = len(barcodes)
+  stats['avg_pairs'] = stats['pairs']/stats['barcodes']
+  stats['duplex_singletons'] = 0
+  for count in barcode_counts.values():
+    if count == 1:
+      stats['duplex_singletons'] += 1
   return stats
 
 
-def print_stats(stats, min_reads=3, human=True):
-  all_stats = stats.copy()
-  all_stats.update({'min_reads':min_reads})
+def print_stats(stats, stats_key=STATS, human=True):
   if human:
-    print("""Total read pairs:\t{pairs}
-Unique barcodes:\t{barcodes}
-Avg # of read pairs per barcode:\t{avg_pairs}
-Singletons:\t{singletons}
-Barcodes with reverse (other strand) present:\t{duplexes}
-Passing threshold of {min_reads} reads per single-strand consensus:
-\tSingle-strand consensus sequences:\t{passed_sscs}
-\tDuplex consensus sequences:\t{passed_duplexes}""".format(**all_stats))
+    for stat_name, stat_description in stats_key.items():
+      print(stats[stat_name], stat_description.format(**stats), sep='\t')
   else:
-    for stat in ('pairs', 'barcodes', 'avg_pairs', 'singletons', 'duplexes', 'min_reads',
-                 'passed_sscs', 'passed_duplexes'):
-      print('{}\t{}'.format(stat, all_stats[stat]))
+    for stat_name in stats_key:
+      print(stats[stat_name], stat_name, sep='\t')
 
 
 def fail(message):
