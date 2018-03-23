@@ -234,9 +234,7 @@ function consensi_consthres {
 function baralign {
   echo -e "\tbaralign.sh ::: correct.families.tsv:"
   "${cmd_prefix}baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
-    | grep -v '^@PG' > "$dirname/correct.tmp.sam"
-  grep -v '^@PG' "$dirname/correct.sam" | diff -s - "$dirname/correct.tmp.sam"
-  rm -rf "$dirname/refdir.tmp" "$dirname/correct.tmp.sam"
+    | _clean_sam | diff -s - "$dirname/correct.sam"
 }
 
 # correct.py
@@ -311,6 +309,21 @@ function _consensi {
       rm "$file"
     fi
   done
+}
+
+function _clean_sam {
+  # Remove @PG line and XM:i: tags.
+  awk -F '\t' -v OFS='\t' '
+    $1 !~ /^@PG$/ {
+      for (i=1; i<=NF; i++) {
+        if (i == 1) {
+          printf("%s", $i)
+        } else if (i <= 11 || substr($i, 1, 5) != "XM:i:") {
+          printf("\t%s", $i)
+        }
+      }
+      printf("\n")
+    }'
 }
 
 main "$@"
