@@ -34,5 +34,6 @@ for script in *.awk *.sh *.py; do
 done
 # Handle special cases.
 mv utils/precheck.py $PREFIX/lib
+mv utils/getreads.py $PREFIX/lib
 ln -s ../lib/precheck.py $PREFIX/bin
 mv VERSION $PREFIX/lib
