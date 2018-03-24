@@ -187,21 +187,21 @@ function barcodes {
 # align-families.py
 function align {
   echo -e "\talign-families.py ::: families.sort.tsv:"
-  "${cmd_prefix}align-families.py" --no-check-names -q "$dirname/families.sort.tsv" \
+  "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align-families.py with 3 processes
 function align_p3 {
   echo -e "\talign-families.py -p 3 ::: families.sort.tsv:"
-  "${cmd_prefix}align-families.py" --no-check-names -q -p 3 "$dirname/families.sort.tsv" \
+  "${cmd_prefix}align-families.py" --no-check-ids -q -p 3 "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align-families.py smoke test
 function align_smoke {
   echo -e "\talign-families.py ::: smoke.families.tsv:"
-  "${cmd_prefix}align-families.py" --no-check-names -q "$dirname/smoke.families.tsv" \
+  "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/smoke.families.tsv" \
     | diff -s - "$dirname/smoke.families.aligned.tsv"
 }
 
@@ -250,7 +250,7 @@ function varylen_barcodes {
 # align-families.py
 function varylen_align {
   echo -e "\talign-families.py ::: varylen.sort.tsv:"
-  "${cmd_prefix}align-families.py" --no-check-names -q "$dirname/varylen.sort.tsv" \
+  "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/varylen.sort.tsv" \
     | diff -s - "$dirname/varylen.msa.tsv"
 }
 
@@ -270,7 +270,7 @@ function baralign {
 # correct.py
 function correct {
   echo -e "\tcorrect.py ::: correct.sam"
-  "${cmd_prefix}correct.py" --no-check-names "$dirname/correct.families.tsv" \
+  "${cmd_prefix}correct.py" --no-check-ids "$dirname/correct.families.tsv" \
       "$dirname/correct.barcodes.fa" "$dirname/correct.sam" \
     | diff -s "$dirname/correct.families.corrected.tsv" -
 }

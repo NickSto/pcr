@@ -40,9 +40,11 @@ def make_argparser():
   parser.add_argument('-m', '--min-reads', type=int, default=3,
     help='The minimum number of reads required in each single-stranded family. Default: '
          '%(default)s')
-  parser.add_argument('-v', '--validate', action='store_true',
+  parser.add_argument('-v', '--validate', dest='check_ids', action='store_true', default=False,
     help='Check the id\'s of the reads to make sure the correct reads are mated into pairs (the '
-         'id\'s of mates must be identical).')
+         'id\'s of mates must be identical). Default: %(default)s.')
+  parser.add_argument('-I', '--no-check-ids', dest='check_ids', action='store_false',
+    help='Don\'t check read ids.')
   return parser
 
 
@@ -60,7 +62,7 @@ def main(argv):
       fail('Error: You must provide either a --families file or two fastq files.')
     with open(args.infile1) as infileh1:
       with open(args.infile2) as infileh2:
-        barcodes = read_fastqs(infileh1, infileh2, tag_len=args.tag_len, validate=args.validate)
+        barcodes = read_fastqs(infileh1, infileh2, tag_len=args.tag_len, check_ids=args.check_ids)
 
   stats = get_stats(barcodes, stats_key=STATS, min_reads=args.min_reads)
   print_stats(stats, stats_key=STATS)
@@ -76,7 +78,7 @@ def read_families(infile):
   return barcodes
 
 
-def read_fastqs(infileh1, infileh2, tag_len=12, validate=False):
+def read_fastqs(infileh1, infileh2, tag_len=12, check_ids=False):
   reader1 = getreads.getparser(infileh1, filetype='fastq').parser()
   reader2 = getreads.getparser(infileh2, filetype='fastq').parser()
   barcodes = collections.Counter()
@@ -86,7 +88,7 @@ def read_fastqs(infileh1, infileh2, tag_len=12, validate=False):
       read2 = next(reader2)
     except StopIteration:
       break
-    if validate and read1.id != read2.id:
+    if check_ids and not read_ids_match(read1.id, read2.id):
       raise getreads.FormatError('Read pair mismatch: "{}" and "{}"'.format(read1.id, read2.id))
     alpha = read1.seq[:tag_len]
     beta  = read2.seq[:tag_len]
@@ -98,6 +100,16 @@ def read_fastqs(infileh1, infileh2, tag_len=12, validate=False):
       barcode = beta + alpha
     barcodes[(barcode, order)] += 1
   return barcodes
+
+
+def read_ids_match(name1, name2):
+  id1 = name1.split()[0]
+  id2 = name2.split()[0]
+  if id1.endswith('/1'):
+    id1 = id1[:-2]
+  if id2.endswith('/2'):
+    id2 = id2[:-2]
+  return id1 == id2
 
 
 def get_stats(barcodes, stats_key=STATS, min_reads=3):

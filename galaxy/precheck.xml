@@ -5,7 +5,7 @@
   </requirements>
   <description>for family content</description>
   <command detect_errors="exit_code">
-    precheck.py $validate --tag-length $tag_len --constant-length $const_len --min-reads $min_reads
+    precheck.py $check_ids --tag-length $tag_len --constant-length $const_len --min-reads $min_reads
       '$fastq1' '$fastq2' &gt; '$output'
   </command>
   <inputs>
@@ -14,7 +14,7 @@
     <param name="min_reads" type="integer" value="3" min="0" label="Minimum reads per family" help="Single-strand families with fewer than this many reads will be skipped."/>
     <param name="tag_len" type="integer" value="12" min="0" label="Tag length" help="Length of each random barcode on the ends of the fragments."/>
     <param name="const_len" type="integer" value="5" min="0" label="Invariant sequence length" help="Length of the sequence between the tag and actual sample sequence (the restriction site, normally)."/>
-    <param name="validate" type="boolean" truevalue="--validate" falsevalue="" checked="False" label="Check read names" help="Make sure the names of the reads in each pair is the same. If checked, this will fail if there is a mismatch."/>
+    <param name="check_ids" type="boolean" truevalue="--validate" falsevalue="--no-check-ids" checked="True" label="Check read names" help="Make sure the ids of the reads in each pair is the same. If checked, this will fail if there is a mismatch."/>
   </inputs>
   <outputs>
     <data name="output" format="tabular"/>
