@@ -39,6 +39,24 @@ BEGIN {
   }
 }
 
+# Validate input.
+{
+  for (i = 1; i <= 8; i++) {
+    if (!$i) {
+      print "Error on read pair (line) " NR ": Missing or empty columns." > "/dev/stderr"
+      exit 1
+    }
+  }
+  if (substr($1, 1, 1) != "@" || substr($2, 1, 1) != "@") {
+    print "Error on read pair (line) " NR ": Read name line doesn't begin with '@'." > "/dev/stderr"
+    exit 1
+  }
+  if (substr($5, 1, 1) != "+" || substr($6, 1, 1) != "+") {
+    print "Error on read pair (line) " NR ": '+' column does not begin with '+'." > "/dev/stderr"
+    exit 1
+  }
+}
+
 $3 && $4 {
   alpha = substr($3, 1, TAG_LEN)
   beta = substr($4, 1, TAG_LEN)
