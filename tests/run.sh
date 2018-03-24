@@ -264,6 +264,7 @@ function baralign {
   echo -e "\tbaralign.sh ::: correct.families.tsv:"
   "${cmd_prefix}baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
     | _clean_sam | diff -s - "$dirname/correct.sam"
+  rm -rf "$dirname/refdir.tmp"
 }
 
 # correct.py
