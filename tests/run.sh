@@ -147,6 +147,12 @@ function errstats {
   errstats_overlap
 }
 
+function varylen {
+  varylen_barcodes
+  varylen_align
+  varylen_consensi
+}
+
 # Run the make-consensi.py-specific tests.
 function consensi_all {
   declare -a tests
@@ -228,6 +234,29 @@ function consensi_consthres {
   _consensi cons.thres.msa.tsv cons.thres.0.7.sscs_1.fa cons.thres.0.7.sscs_2.fa \
           cons.thres.0.7.dcs_1.fa cons.thres.0.7.dcs_2.fa \
           --min-cons-reads 3 --cons-thres 0.7
+}
+
+# variable-length reads
+# make-barcodes.awk
+function varylen_barcodes {
+  echo -e "\tmake-barcodes.awk ::: varylen.raw_[12].fq"
+  paste "$dirname/varylen.raw_1.fq" "$dirname/varylen.raw_2.fq" \
+    | paste - - - - \
+    | awk -f "$dirname/../make-barcodes.awk" -v TAG_LEN=12 -v INVARIANT=5 \
+    | sort \
+    | diff -s - "$dirname/varylen.sort.tsv"
+}
+
+# align-families.py
+function varylen_align {
+  echo -e "\talign-families.py ::: varylen.sort.tsv:"
+  "${cmd_prefix}align-families.py" -q "$dirname/varylen.sort.tsv" \
+    | diff -s - "$dirname/varylen.msa.tsv"
+}
+
+# make-consensi.py
+function varylen_consensi {
+  _consensi varylen.msa.tsv varylen.sscs_1.fa varylen.sscs_2.fa varylen.dcs_1.fa varylen.dcs_2.fa
 }
 
 # baralign.sh
