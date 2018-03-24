@@ -3,8 +3,8 @@
   <requirements>
     <requirement type="package" version="2.14">dunovo</requirement>
   </requirements>
-  <description>data family content</description>
-  <command interpreter="python">
+  <description>for family content</description>
+  <command detect_errors="exit_code">
     precheck.py $validate --tag-length $tag_len --constant-length $const_len --min-reads $min_reads
       $fastq1 $fastq2 &gt; $output
   </command>
