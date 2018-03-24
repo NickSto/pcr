@@ -6,7 +6,7 @@
   <description>for family content</description>
   <command detect_errors="exit_code">
     precheck.py $validate --tag-length $tag_len --constant-length $const_len --min-reads $min_reads
-      $fastq1 $fastq2 &gt; $output
+      '$fastq1' '$fastq2' &gt; '$output'
   </command>
   <inputs>
     <param name="fastq1" type="data" format="fastq" label="Sequencing reads, mate 1"/>
