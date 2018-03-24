@@ -87,14 +87,11 @@ This won't catch every installation problem, but it should check that the basics
 
 This example shows how to go from raw duplex sequencing data to the final duplex consensus sequences.
 
-Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts `align-families.py`, `make-consensi.py`, `baralign.sh`, and `correct.py` should be on your `$PATH`. Also, in the following command, replace `make-barcodes.awk` with the actual path to that script (included in this code).
+Your raw reads should be in `reads_1.fastq` and `reads_2.fastq`. And the scripts `make-families.sh`, `align-families.py`, `make-consensi.py`, `baralign.sh`, and `correct.py` should be on your `$PATH`.
 
 1. Sort the reads into families based on their barcodes and split the barcodes from the sequence.  
     ```bash
-    $ paste reads_1.fastq reads_2.fastq \
-      | paste - - - - \
-      | awk -f make-barcodes.awk \
-      | sort > families.tsv
+    $ make-families.sh reads_1.fastq reads_2.fastq > families.tsv
     ```
 
 2. (Optional) Correct errors in barcodes.
@@ -117,15 +114,11 @@ See all options for a given command by giving it the `-h` flag.
 
 #### 1. Sort the reads into families based on their barcodes and split the barcodes from the sequence.  
 
-    $ paste reads_1.fastq reads_2.fastq \
-      | paste - - - - \
-      | awk -f make-barcodes.awk \
-      | sort > families.tsv
+    $ make-families.sh reads_1.fastq reads_2.fastq > families.tsv
 
+This command will split the 12bp tag off each read, combine the tags from each pair of reads into a combined barcode, and sort them by it. The end result is a file (named `families.tsv` above) listing read pairs, grouped by barcode. See the `make-barcodes.awk` code for the details on the formation of the barcodes and the format.
 
-This command pipeline will transform each pair of reads into a one-line record, split the 12bp barcodes off them, and sort by their combined barcode. The end result is a file (named `families.tsv` above) listing read pairs, grouped by barcode. See the `make-barcodes.awk` code for the details on the formation of the barcodes and the format.
-
-Note: This step requires your FASTQ files to have exactly 4 lines per read (no multi-line sequences). Also, in the output, the read sequence does not include the barcode or the 5bp constant sequence after it. You can customize the length of the barcode or constant sequence by setting the awk constants `TAG_LEN` and `INVARIANT` (i.e. `awk -v TAG_LEN=10 make-barcodes.awk`).
+Note: This step requires your FASTQ files to have exactly 4 lines per read (no multi-line sequences). 5' trimmed sequences of variable length are allowed. Also, in the output, the read sequence does not include the barcode or the 5bp constant sequence after it. You can customize the length of the barcode with the `-t` option or the constant sequence with the `-i` option.
 
 #### 2. (Optional) Correct errors in barcodes.
 
@@ -164,6 +157,36 @@ The reads will be printed in two files, one per paired-end mate, with this namin
 `>{barcode} {# reads in strand 1 family}-{# reads in strand 2 family}`  
 e.g.  
 `>TTGCGCCAGGGCGAGGAAAATACT 8-13`
+
+## Post-processing
+
+When the consensus-calling process doesn't have enough information to call a base, it inserts an N or another IUPAC ambiguity code. This can happen in several cases, like when the two single-strand consensus sequences disagree, the PHRED quality is low, or the ends of the reads were trimmed.
+
+The script `trimmer.py` in [this repository](https://github.com/makrutenko/common) was written to deal with these bases. It can trim the ends of reads when they contain too many N's or ambiguous bases, or filter out reads with too many of them, or both.
+
+It's a good idea to apply `trimmer.py` to at least remove sequence with a high density of ambiguous bases. This will result from any low-quality region or portion of the consensus where the raw reads were trimmed to different lengths:
+
+`$ trimmer.py --acgt --window 10 --thres 0.3 --min-length 50 duplex_1.fa duplex_2.fa duplex.filt_1.fa duplex.filt_2.fa`
+
+For an explanation of the arguments, see:
+
+### Usage
+
+This command will trim any read with more than 3 N's in a 10 base window, removing all the sequence after the first N in the offending window:
+
+`$ trimmer.py --filt-bases N --window 10 --thres 0.3 consensus.fa > filtered.fa`
+
+If our reads are 251bp, we can add `--min-length 251` to make it simply remove any of the reads that ever exceed the threshold:
+
+`$ trimmer.py --filt-bases N --window 10 --thres 0.3 --min-length 251 consensus.fa > filtered.fa`
+
+The `--acgt` argument will filter on any non-ACGT base instead of just N's:
+
+`$ trimmer.py --acgt --window 10 --thres 0.3 consensus.fa > filtered.fa`
+
+The script also handles paired-end data, preserving pairs by removing both reads when any one of them needs to be filtered out:
+
+`$ trimmer.py --acgt --window 10 --thres 0.3 cons_1.fa cons_2.fa filtered_1.fa filtered_2.fa`
 
 
 ### Known bugs
