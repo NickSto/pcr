@@ -170,7 +170,7 @@ It's a good idea to apply `trimmer.py` to at least remove sequence with a high d
 
 For an explanation of the arguments, see:
 
-### Usage
+### Trimmer usage
 
 This command will trim any read with more than 3 N's in a 10 base window, removing all the sequence after the first N in the offending window:
 
