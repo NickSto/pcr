@@ -15,7 +15,7 @@ Read raw duplex sequencing reads, extract their barcodes, and group them by barc
 function main {
 
   # Read arguments.
-  if [[ $# -lt 2 ]]; then
+  if [[ "$#" -lt 2 ]] || [[ "$1" == '--help' ]]; then
     fail "$Usage"
   fi
   taglen=$TagLenDefault
@@ -31,6 +31,10 @@ function main {
   # Get positionals.
   fastq1="${@:$OPTIND:1}"
   fastq2="${@:$OPTIND+1:1}"
+
+  if ! [[ "$fastq1" ]] || ! [[ "$fastq2" ]]; then
+    fail "Error: Must provide two input fastq files."
+  fi
 
   # Find the actual directory this file resides in (resolving links).
   if readlink -f dummy >/dev/null 2>/dev/null; then
