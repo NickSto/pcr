@@ -297,16 +297,15 @@ function _consensi {
   done
   echo -e "\tmake-consensi.py ${args[@]} ::: $input:"
   "${cmd_prefix}make-consensi.py" ${args[@]} "$dirname/$input" \
-    --sscs1 "$dirname/families.tmp.sscs_1.fa" --sscs2 "$dirname/families.tmp.sscs_2.fa" \
-    --dcs1  "$dirname/families.tmp.dcs_1.fa"  --dcs2  "$dirname/families.tmp.dcs_2.fa"
-  diff -s "$dirname/families.tmp.sscs_1.fa" "$dirname/$sscs1"
-  diff -s "$dirname/families.tmp.sscs_2.fa" "$dirname/$sscs2"
-  diff -s "$dirname/families.tmp.dcs_1.fa"  "$dirname/$dcs1"
-  diff -s "$dirname/families.tmp.dcs_2.fa"  "$dirname/$dcs2"
-  for file in "$dirname/families.tmp.sscs_1.fa" "$dirname/families.tmp.sscs_2.fa" \
-      "$dirname/families.tmp.dcs_1.fa" "$dirname/families.tmp.dcs_2.fa"; do
-    if [[ -f "$file" ]]; then
-      rm "$file"
+    --sscs1 "$dirname/cons.tmp.sscs_1.fa" --sscs2 "$dirname/cons.tmp.sscs_2.fa" \
+    --dcs1  "$dirname/cons.tmp.dcs_1.fa"  --dcs2  "$dirname/cons.tmp.dcs_2.fa"
+  diff -s "$dirname/cons.tmp.sscs_1.fa" "$dirname/$sscs1"
+  diff -s "$dirname/cons.tmp.sscs_2.fa" "$dirname/$sscs2"
+  diff -s "$dirname/cons.tmp.dcs_1.fa"  "$dirname/$dcs1"
+  diff -s "$dirname/cons.tmp.dcs_2.fa"  "$dirname/$dcs2"
+  for file in cons.tmp.sscs_1.fa cons.tmp.sscs_2.fa cons.tmp.dcs_1.fa cons.tmp.dcs_2.fa; do
+    if [[ -f "$dirname/$file" ]]; then
+      rm "$dirname/$file"
     fi
   done
 }
