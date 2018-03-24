@@ -51,6 +51,10 @@ def make_argparser():
               '8. read 2 quality scores'))
   parser.add_argument('-a', '--aligner', choices=('mafft', 'kalign', 'dummy'), default='kalign',
     help=wrap('The multiple sequence aligner to use. Default: %(default)s'))
+  parser.add_argument('-N', '--no-check-names', dest='check_names', action='store_false', default=True,
+    help='Don\'t check to make sure read pairs have identical names. By default, if this '
+         'encounters a pair of reads in families.tsv with names that aren\'t identical (minus an '
+         'ending /1 or /2), it will throw an error.')
   parser.add_argument('-p', '--processes', default=0,
     help=wrap('Number of worker subprocesses to use. If 0, no subprocesses will be started and '
               'everything will be done inside one process. Give "auto" to use as many processes '
@@ -165,6 +169,8 @@ def main(argv):
         if len(fields) != 8:
           continue
         (this_barcode, this_order, name1, seq1, qual1, name2, seq2, qual2) = fields
+        if args.check_names and not read_names_match(name1, name2):
+          raise ValueError('Read names "{}" and "{}" do not match.'.format(name1, name2))
         # If the barcode or order has changed, we're in a new family.
         # Process the reads we've previously gathered as one family and start a new family.
         if this_barcode != barcode or this_order != order:
@@ -262,6 +268,14 @@ def get_run_data(stats, pool, aligner, max_mem=None):
   run_data['queue_size'] = pool.queue_size
   run_data['aligner'] = aligner
   return run_data
+
+
+def read_names_match(name1, name2):
+  if name1.endswith('/1'):
+    name1 = name1[:-2]
+  if name2.endswith('/2'):
+    name2 = name2[:-2]
+  return name1 == name2
 
 
 def process_duplex(duplex, barcode, aligner='mafft'):

@@ -7,7 +7,7 @@
     <!-- TODO: require Python 2.7 -->
   </requirements>
   <version_command>align-families.py --version</version_command>
-  <command detect_errors="exit_code">align-families.py --aligner $aligner --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
+  <command detect_errors="exit_code">align-families.py $check_names --aligner $aligner --galaxy $phone --processes \${GALAXY_SLOTS:-1} '$input' &gt; '$output'
   </command>
   <inputs>
     <param name="input" type="data" format="tabular" label="Input reads" help="with barcodes, grouped by family"/>
@@ -15,6 +15,7 @@
       <option value="kalign">Kalign2</option>
       <option value="mafft">MAFFT</option>
     </param>
+    <param name="check_names" type="boolean" truevalue="" falsevalue="--no-check-names" checked="True" label="Check read names" help="Make sure reads are properly paired up. The job will fail if there is a pair of reads where their names aren't identical (minus any ending /1 or /2)."/>
     <param name="phone" type="boolean" truevalue="--phone-home" falsevalue="" checked="False" label="Send usage data" help="Report helpful usage data to the developer, to better understand the use cases and performance of the tool. The only data which will be recorded is the name and version of the tool, the size of the input data, the number of processes used, the time and memory taken to process it, the alignment algorithm selected, and the IP address of the machine running it. Also, if the tool fails, it will report the name of the exception thrown and the line of code it occurred in. The names of the input and output datasets are not sent. All the reporting and recording code is available at https://github.com/NickSto/ET."/>
   </inputs>
   <outputs>
