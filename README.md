@@ -51,23 +51,24 @@ To use the barcode error correction script `correct.py`, the following modules m
     $ git checkout master
     $ git submodule update --recursive
 
-#### Via GitHub webpage
+#### Via the GitHub webpage
 
-Click the [releases](https://github.com/galaxyproject/dunovo/releases) tab at the top of this page, and find the latest release. Download the zip file (the "Source code (zip)" link), as well as `kalign.zip`, `utillib.zip`, and `ET.zip`. Extract the first zip file, then unzip the other three into the extracted directory and name those directories `kalign`, `utillib`, and `ET`, respectively.
+Click the [releases](https://github.com/galaxyproject/dunovo/releases) tab at the top of this page, and find the latest release. Download the zip file (the "Source code (zip)" link), as well as `kalign.zip`, `utillib.zip`, `ET.zip`, and `makrutenko.zip`. Extract the first zip file, then unzip the other three into the extracted directory and name those directories `kalign`, `utillib`, `ET`, and `makrutenko`, respectively.
 
 In the end, the organization and names of the three directories should look like this:
 
     dunovo
     ├─╴kalign
     ├─╴utillib
-    └─╴ET
+    ├─╴ET
+    └─╴makrutenko
 
 ### Installation
 
     $ cd dunovo
     $ make
 
-The `make` command is needed to compile the C modules and kalign, which are required. You need to be in the root source directory (where the file `Makefile` is) before running the command.
+The `make` command is needed to compile the C modules and kalign. You need to be in the root source directory (where the file `Makefile` is) before running the command.
 
 ### Testing
 
@@ -162,7 +163,7 @@ e.g.
 
 When the consensus-calling process doesn't have enough information to call a base, it inserts an N or another IUPAC ambiguity code. This can happen in several cases, like when the two single-strand consensus sequences disagree, the PHRED quality is low, or the ends of the reads were trimmed.
 
-The script `trimmer.py` in [this repository](https://github.com/makrutenko/common) was written to deal with these bases. It can trim the ends of reads when they contain too many N's or ambiguous bases, or filter out reads with too many of them, or both.
+The script `trimmer.py` in the `makrutenko` directory was written to deal with these bases. It can trim the ends of reads when they contain too many N's or ambiguous bases, or filter out reads with too many of them, or both.
 
 It's a good idea to apply `trimmer.py` to at least remove sequence with a high density of ambiguous bases. This will result from any low-quality region or portion of the consensus where the raw reads were trimmed to different lengths:
 
