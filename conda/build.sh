@@ -18,9 +18,10 @@ get_submodule () {
   fi
   rm v$version.tar.gz
 }
-get_submodule kalign  0.2.0 makrutenko kalign-dunovo 473dd562f520a218df2dd147c89940422344adad6d8824141bffe6466c6d40e7
-get_submodule utillib 0.1.0 NickSto    utillib       bffe515f7bd98661657c26003c41c1224f405c3a36ddabf5bf961fab86f9651a
-get_submodule ET      0.2.2 NickSto    ET            11dc5cb02521a2260e6c88a83d489c72f819bd759aeff31d66aa40ca2f1358a6
+get_submodule kalign     0.2.0 makrutenko kalign-dunovo 473dd562f520a218df2dd147c89940422344adad6d8824141bffe6466c6d40e7
+get_submodule utillib    0.1.0 NickSto    utillib       bffe515f7bd98661657c26003c41c1224f405c3a36ddabf5bf961fab86f9651a
+get_submodule ET         0.2.2 NickSto    ET            11dc5cb02521a2260e6c88a83d489c72f819bd759aeff31d66aa40ca2f1358a6
+get_submodule makrutenko 0.1.0 makrutenko common        b17857512d46cf62164f5f39d7185f741b68b75938fa39c8a8b43f9380a277db
 
 # Compile binaries and move them to lib.
 make
