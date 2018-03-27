@@ -34,7 +34,9 @@ for script in *.awk *.sh *.py; do
   ln -s ../lib/$script $PREFIX/bin
 done
 # Handle special cases.
-mv utils/precheck.py $PREFIX/lib
 mv utils/getreads.py $PREFIX/lib
+mv utils/precheck.py $PREFIX/lib
+mv makrutenko/trimmer.py $PREFIX/lib
 ln -s ../lib/precheck.py $PREFIX/bin
+ln -s ../lib/trimmer.py $PREFIX/bin
 mv VERSION $PREFIX/lib

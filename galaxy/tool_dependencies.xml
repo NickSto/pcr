@@ -15,15 +15,6 @@
         <!-- download the main dunovo package files -->
         <action type="download_by_url" sha256sum="e517a12794e7cac31b4ebcad99e6a6c0789027ace7d33f89d06ff2bc961515fc">https://github.com/galaxyproject/dunovo/archive/v2.14.tar.gz</action>
         <!-- TODO: Store dunovo version number in variable instead of hardcoding it everywhere. -->
-        <!-- Move precheck.py and its dependencies into the main source directory. -->
-        <action type="move_file">
-          <source>utils/precheck.py</source>
-          <destination>$TMP_WORK_DIR/dunovo-2.14</destination>
-        </action>
-        <action type="move_file">
-          <source>utils/getreads.py</source>
-          <destination>$TMP_WORK_DIR/dunovo-2.14</destination>
-        </action>
         <!-- install submodules -->
         <action type="shell_command">rmdir kalign utillib ET</action>
         <!-- download the utillib submodule -->
@@ -56,6 +47,19 @@
         <action type="shell_command">rm v0.1.0.tar.gz</action>
         <action type="move_file" rename_to="makrutenko">
           <source>makrutenko-0.1.0</source>
+          <destination>$TMP_WORK_DIR/dunovo-2.14</destination>
+        </action>
+        <!-- Move some source files from subdirectories into the main source directory. -->
+        <action type="move_file">
+          <source>utils/precheck.py</source>
+          <destination>$TMP_WORK_DIR/dunovo-2.14</destination>
+        </action>
+        <action type="move_file">
+          <source>makrutenko/trimmer.py</source>
+          <destination>$TMP_WORK_DIR/dunovo-2.14</destination>
+        </action>
+        <action type="move_file">
+          <source>utils/getreads.py</source>
           <destination>$TMP_WORK_DIR/dunovo-2.14</destination>
         </action>
         <!-- make and install -->
