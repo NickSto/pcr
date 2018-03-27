@@ -5,10 +5,11 @@ import re
 import os
 import sys
 import argparse
-import fastqreader
-script_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(os.path.dirname(script_dir))
+script_path = os.path.realpath(__file__)
+root_dir = os.path.dirname(os.path.dirname(script_path))
+sys.path.append(root_dir)
 import swalign
+from makrutenko import getreads
 
 CANON = 'ACGT-'
 
@@ -26,7 +27,7 @@ def main(argv):
 
   parser.add_argument('reads', type=argparse.FileType('r'),
     help='Output from duplex pipeline. Should be the tsv produced by sim-label.py.')
-  parser.add_argument('frags', type=fastqreader.FastqReadGenerator,
+  parser.add_argument('frags', type=getreads.FastqReader,
     help='--frag-file from sim.py.')
   parser.add_argument('-i', '--ignore-ambiguous', action='store_true',
     help='Don\'t consider ambiguous bases ("N", "R", etc.) in SNV errors. Specifically, it will '

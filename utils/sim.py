@@ -13,7 +13,10 @@ import numbers
 import tempfile
 import argparse
 import subprocess
-import fastqreader
+script_path = os.path.realpath(__file__)
+root_dir = os.path.dirname(os.path.dirname(script_path))
+sys.path.append(root_dir)
+from makrutenko import getreads
 
 REVCOMP_TABLE = string.maketrans('acgtrymkbdhvACGTRYMKBDHV', 'tgcayrkmvhdbTGCAYRKMVHDB')
 WGSIM_ID_REGEX = r'^(.+)_(\d+)_(\d+)_\d+:\d+:\d+_\d+:\d+:\d+_([0-9a-f]+)/[12]$'
@@ -131,9 +134,9 @@ def main(argv):
   try:
     # Step 1: Use wgsim to create fragments from the reference.
     if args.frag_file:
-      frag_file = args.frag_file
+      frag_path = args.frag_file
     else:
-      frag_file = tmpfile.name
+      frag_path = tmpfile.name
     if args.ref and os.path.isfile(args.ref) and os.path.getsize(args.ref):
       #TODO: Check exit status
       #TODO: Check for wgsim on the PATH.
@@ -141,13 +144,13 @@ def main(argv):
       # modification.
       run_command('wgsim', '-e', '0', '-r', '0', '-d', '0', '-R', args.indel_rate, '-S', seed,
                   '-N', args.n_frags, '-X', args.ext_rate, '-1', args.frag_len,
-                  args.ref, frag_file, os.devnull)
+                  args.ref, frag_path, os.devnull)
 
     # NOTE: Coordinates here are 0-based (0 is the first base in the sequence).
     extended_dist = extend_dist(RAW_DISTRIBUTION)
     proportional_dist = compile_dist(extended_dist)
     n_frags = 0
-    for raw_fragment in fastqreader.FastqReadGenerator(frag_file):
+    for raw_fragment in getreads.getparser(frag_path, filetype='fastq'):
       n_frags += 1
       if n_frags > args.n_frags:
         break

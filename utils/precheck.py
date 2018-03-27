@@ -1,10 +1,14 @@
 #!/usr/bin/env python
 from __future__ import division
 from __future__ import print_function
+import os
 import sys
 import argparse
 import collections
-import getreads
+script_path = os.path.realpath(__file__)
+root_dir = os.path.dirname(os.path.dirname(script_path))
+sys.path.append(root_dir)
+from makrutenko import getreads
 
 STATS = collections.OrderedDict(
   (

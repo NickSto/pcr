@@ -13,7 +13,10 @@ import numbers
 import tempfile
 import argparse
 import subprocess
-import fastqreader
+script_path = os.path.realpath(__file__)
+root_dir = os.path.dirname(os.path.dirname(script_path))
+sys.path.append(root_dir)
+from makrutenko import getreads
 
 PY3 = sys.version_info[0] == 3
 
@@ -120,12 +123,15 @@ def main(argv):
   tone_down_logger()
   if not (args.ref or args.frag_file):
     parser.print_usage()
-    logging.critical('You must provide either a reference or fragments file.')
+    fail('You must provide either a reference or fragments file.')
   if args.ref:
     if not os.path.isfile(args.ref):
       fail('Error: reference file {!r} not found.'.format(args.ref))
     if not os.path.getsize(args.ref):
       fail('Error: reference file {!r} empty (0 bytes).'.format(args.ref))
+  else:
+    if not (args.reads1 and args.reads2):
+      fail('Error: must provide output --reads1 and --reads2 files.')
   if args.seed is None:
     seed = random.randint(0, 2**31-1)
     logging.info('seed: {}\n'.format(seed))
@@ -157,9 +163,9 @@ def main(argv):
   try:
     # Step 1: Use wgsim to create fragments from the reference.
     if args.frag_file:
-      frag_file = args.frag_file
+      frag_path = args.frag_file
     else:
-      frag_file = tmpfile.name
+      frag_path = tmpfile.name
     if args.ref:
       #TODO: Check exit status
       #TODO: Check for wgsim on the PATH.
@@ -167,13 +173,13 @@ def main(argv):
       # modification.
       run_command('wgsim', '-e', '0', '-r', '0', '-d', '0', '-R', args.indel_rate, '-S', seed,
                   '-N', args.n_frags, '-X', args.ext_rate, '-1', args.frag_len,
-                  args.ref, frag_file, os.devnull)
+                  args.ref, frag_path, os.devnull)
 
     # NOTE: Coordinates here are 0-based (0 is the first base in the sequence).
     extended_dist = extend_dist(RAW_DISTRIBUTION)
     proportional_dist = compile_dist(extended_dist)
     n_frags = 0
-    for raw_fragment in fastqreader.FastqReadGenerator(frag_file):
+    for raw_fragment in getreads.getparser(frag_path, filetype='fastq'):
       n_frags += 1
       if n_frags > args.n_frags:
         break

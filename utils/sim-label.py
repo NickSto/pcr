@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 from __future__ import division
 from __future__ import print_function
+import os
 import sys
 import argparse
-import fastareader
+script_path = os.path.realpath(__file__)
+root_dir = os.path.dirname(os.path.dirname(script_path))
+sys.path.append(root_dir)
+from makrutenko import getreads
 
 ARG_DEFAULTS = {}
 USAGE = "%(prog)s [options]"
@@ -16,7 +20,7 @@ def main(argv):
   parser = argparse.ArgumentParser(description=DESCRIPTION)
   parser.set_defaults(**ARG_DEFAULTS)
 
-  parser.add_argument('reads', type=fastareader.FastaReadGenerator,
+  parser.add_argument('reads', type=getreads.FastaReader,
     help='Output fasta file from duplex pipeline. This script depends on their names being the '
          'exact format produced by sim.py.')
   parser.add_argument('families', type=argparse.FileType('r'),

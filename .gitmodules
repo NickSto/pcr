@@ -7,3 +7,6 @@
 [submodule "kalign"]
 	path = kalign
 	url = https://github.com/makrutenko/kalign-dunovo.git
+[submodule "makrutenko"]
+	path = makrutenko
+	url = https://github.com/makrutenko/common.git
