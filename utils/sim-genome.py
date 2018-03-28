@@ -10,7 +10,7 @@ import sim
 script_path = os.path.realpath(__file__)
 root_dir = os.path.dirname(os.path.dirname(script_path))
 sys.path.append(root_dir)
-from makrutenko import getreads
+from bfx import getreads
 
 ARG_DEFAULTS = {'spacing':600, 'indel_rate':0.15, 'ext_rate':0.3}
 USAGE = "%(prog)s [options]"

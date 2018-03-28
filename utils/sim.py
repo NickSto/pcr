@@ -16,7 +16,7 @@ import subprocess
 script_path = os.path.realpath(__file__)
 root_dir = os.path.dirname(os.path.dirname(script_path))
 sys.path.append(root_dir)
-from makrutenko import getreads
+from bfx import getreads
 
 REVCOMP_TABLE = string.maketrans('acgtrymkbdhvACGTRYMKBDHV', 'tgcayrkmvhdbTGCAYRKMVHDB')
 WGSIM_ID_REGEX = r'^(.+)_(\d+)_(\d+)_\d+:\d+:\d+_\d+:\d+:\d+_([0-9a-f]+)/[12]$'

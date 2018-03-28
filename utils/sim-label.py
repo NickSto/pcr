@@ -7,7 +7,7 @@ import argparse
 script_path = os.path.realpath(__file__)
 root_dir = os.path.dirname(os.path.dirname(script_path))
 sys.path.append(root_dir)
-from makrutenko import getreads
+from bfx import getreads
 
 ARG_DEFAULTS = {}
 USAGE = "%(prog)s [options]"
