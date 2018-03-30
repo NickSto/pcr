@@ -17,8 +17,8 @@ simplewrap = shims.get_module_or_shim('utillib.simplewrap')
 version = shims.get_module_or_shim('utillib.version')
 phone = shims.get_module_or_shim('ET.phone')
 
-SANGER_START = 33
-SOLEXA_START = 64
+# The ascii values that represent a 0 PHRED score.
+QUAL_OFFSETS = {'sanger':33, 'solexa':64}
 USAGE = """$ %(prog)s [options] families.msa.tsv -1 duplexes_1.fa -2 duplexes_2.fa
        $ cat families.msa.tsv | %(prog)s [options] -1 duplexes_1.fa -2 duplexes_2.fa"""
 DESCRIPTION = """Build consensus sequences from read aligned families. Prints duplex consensus \
@@ -66,17 +66,22 @@ def make_argparser():
   io.add_argument('--sscs2', metavar='sscs_2.fa', type=argparse.FileType('w'),
     help=wrap('Save the single-strand consensus sequences (mate 2) in this file (FASTA format). '
               'Warning: This will be overwritten if it exists!'))
+  io.add_argument('-F', '--qual-format', choices=('sanger', 'solexa'), default='sanger',
+    help=wrap('FASTQ quality score format. Sanger scores are assumed to begin at \'{}\' ({}). '
+              'Default: %(default)s.'.format(QUAL_OFFSETS['sanger'], chr(QUAL_OFFSETS['sanger']))))
+  io.add_argument('--fastq-out', metavar='PHRED_SCORE', type=int,
+    help=wrap('Output in FASTQ instead of FASTA. You must specify the quality score to give to all '
+              'bases. There is no meaningful quality score we can automatically give, so you will '
+              'have to specify an artificial one. A good choice is 40, the maximum score normally '
+              'output by sequencers.'))
   params = parser.add_argument_group('Algorithm parameters')
   params.add_argument('-r', '--min-reads', type=int, default=3,
     help=wrap('The minimum number of reads (from each strand) required to form a single-strand '
               'consensus. Strands with fewer reads will be skipped. Default: %(default)s.'))
-  params.add_argument('-q', '--qual', type=int, default=20,
+  params.add_argument('-q', '--qual', metavar='PHRED_SCORE', type=int, default=20,
     help=wrap('Base quality threshold. Bases below this quality will not be counted. '
               'Default: %(default)s.'))
-  params.add_argument('-F', '--qual-format', choices=('sanger', 'solexa'), default='sanger',
-    help=wrap('FASTQ quality score format. Sanger scores are assumed to begin at \'{}\' ({}). '
-              'Default: %(default)s.'.format(SANGER_START, chr(SANGER_START))))
-  params.add_argument('-c', '--cons-thres', type=float, default=0.5,
+  params.add_argument('-c', '--cons-thres', metavar='THRES', type=float, default=0.5,
     help=wrap('The threshold to use when making consensus sequences. The consensus base must be '
               'present in more than this fraction of the reads, or N will be used. '
               'Default: %(default)s'))
@@ -160,12 +165,16 @@ def main(argv):
     # Process and validate arguments.
     if args.queue_size is not None and args.queue_size <= 0:
       fail('Error: --queue-size must be greater than zero.')
-    if args.qual_format == 'sanger':
-      qual_thres = chr(args.qual + SANGER_START)
-    elif args.qual_format == 'solexa':
-      qual_thres = chr(args.qual + SOLEXA_START)
+    qual_start = QUAL_OFFSETS[args.qual_format]
+    qual_thres = chr(args.qual + qual_start)
+    if args.fastq_out is None:
+      # Output FASTA.
+      output_qual = None
     else:
-      fail('Error: unrecognized --qual-format.')
+      # Output FASTQ.
+      if qual_start+args.fastq_out > 126:
+        fail('Error: --fastq-out PHRED score ({}) is too large.'.format(args.fastq_out))
+      output_qual = chr(qual_start+args.fastq_out)
     if args.min_cons_reads > args.min_reads:
       fail('Error: --min-reads must be greater than --min-cons-reads (or you\'ll have a lot of '
            'consensus sequences with only N\'s!). If you want to exclude families with fewer than X '
@@ -186,6 +195,7 @@ def main(argv):
       'cons_thres': args.cons_thres,
       'min_cons_reads': args.min_cons_reads,
       'qual_thres': qual_thres,
+      'output_qual': output_qual,
     }
     pool = parallel_tools.SyncAsyncPool(process_duplex,
                                         processes=args.processes,
@@ -316,12 +326,14 @@ def get_run_data(stats, pool, max_mem=None):
   return run_data
 
 
-def process_duplex(duplex, barcode, min_reads=3, cons_thres=0.5, min_cons_reads=0, qual_thres=' '):
+def process_duplex(duplex, barcode, min_reads=3, cons_thres=0.5, min_cons_reads=0, qual_thres=' ',
+                   output_qual=None):
   """Create duplex consensus sequences for the reads from one barcode."""
   # The code in the main loop used to ensure that "duplex" contains only reads belonging to one final
   # duplex consensus read: ab.1 and ba.2 reads OR ab.2 and ba.1 reads. (Of course, one half might
   # be missing).
-  logging.info('Starting duplex {}'.format(barcode))
+  famsizes = ', '.join([str(len(family)) for family in duplex.values()])
+  logging.info('Starting duplex {}: {}'.format(barcode, famsizes))
   start = time.time()
   # Construct consensus sequences.
   try:
@@ -331,7 +343,7 @@ def process_duplex(duplex, barcode, min_reads=3, cons_thres=0.5, min_cons_reads=
     logging.exception('While processing duplex {}:'.format(barcode))
     raise
   # Format output.
-  dcs_strs, sscs_strs = format_outputs(dcss, sscss, barcode)
+  dcs_strs, sscs_strs = format_outputs(dcss, sscss, barcode, output_qual)
   # Calculate run statistics.
   elapsed = time.time() - start
   total_reads = sum([len(family) for family in duplex.values()])
@@ -404,10 +416,12 @@ def make_dcss(sscss):
   return dcss
 
 
-def format_outputs(dcss, sscss, barcode):
-  """Format the consensus sequences into FASTA-formatted strings ready for printing.
-  sscs_strs is structured so that sscs_strs[order][mate] is the FASTA-formatted output string for
-  one SSCS (including ending newline)."""
+def format_outputs(dcss, sscss, barcode, output_qual=None):
+  """Format the consensus sequences into FASTA/Q-formatted strings ready for printing.
+  sscs_strs is structured so that sscs_strs[order][mate] is the FASTA/Q-formatted output string for
+  one SSCS (including ending newline).
+  If output_qual is not None, this will format into FASTQ, using the output_qual as the quality
+  score character for every base. Note: output_qual must be a string of length 1."""
   # SSCS
   sscs_strs = {}
   for order in 'ab', 'ba':
@@ -415,7 +429,12 @@ def format_outputs(dcss, sscss, barcode):
     for mate in 0, 1:
       sscs = sscss.get((order, mate))
       if sscs:
-        sscs_str_pair.append('>{bar}.{order} {nreads}\n{seq}\n'.format(bar=barcode, **sscs))
+        if output_qual is None:
+          sscs_str_pair.append('>{bar}.{order} {nreads}\n{seq}\n'.format(bar=barcode, **sscs))
+        else:
+          quals = output_qual * len(sscs['seq'])
+          sscs_str_pair.append('@{bar}.{order} {nreads}\n{seq}\n+\n{quals}\n'
+                               .format(bar=barcode, quals=quals, **sscs))
     if len(sscs_str_pair) == 2:
       sscs_strs[order] = sscs_str_pair
   # DCS
@@ -425,7 +444,12 @@ def format_outputs(dcss, sscss, barcode):
     for duplex_mate in 0, 1:
       dcs = dcss[duplex_mate]
       nreads_str = '-'.join([str(nreads) for nreads in dcs['nreads']])
-      dcs_str = '>{bar} {nreads}\n{seq}\n'.format(bar=barcode, nreads=nreads_str, seq=dcs['seq'])
+      if output_qual is None:
+        dcs_str = '>{bar} {nreads}\n{seq}\n'.format(bar=barcode, nreads=nreads_str, seq=dcs['seq'])
+      else:
+        quals = output_qual * len(dcs['seq'])
+        dcs_str = '@{bar} {nreads}\n{seq}\n+\n{quals}\n'.format(bar=barcode, nreads=nreads_str,
+                                                                seq=dcs['seq'], quals=quals)
       dcs_strs.append(dcs_str)
   return dcs_strs, sscs_strs
 
