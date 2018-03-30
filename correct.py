@@ -50,9 +50,9 @@ def make_argparser():
     help='Choose the "correct" barcode in a network of related barcodes by either the count of how '
          'many times the barcode was observed ("freq") or how connected the barcode is to the '
          'others in the network ("connect").')
-  parser.add_argument('-N', '--no-check-names', dest='check_names', action='store_false', default=True,
-    help='Don\'t check to make sure read pairs have identical names. By default, if this '
-         'encounters a pair of reads in families.tsv with names that aren\'t identical (minus an '
+  parser.add_argument('-I', '--no-check-ids', dest='check_ids', action='store_false', default=True,
+    help='Don\'t check to make sure read pairs have identical ids. By default, if this '
+         'encounters a pair of reads in families.tsv with ids that aren\'t identical (minus an '
          'ending /1 or /2), it will throw an error.')
   parser.add_argument('--limit', type=int,
     help='Limit the number of lines that will be read from each input file, for testing purposes.')
@@ -124,7 +124,7 @@ def main(argv):
 
     logging.info('Reading the families.tsv to get the counts of each family..')
     family_counts, read_pairs = get_family_counts(args.families, limit=args.limit,
-                                                  check_names=args.check_names)
+                                                  check_ids=args.check_ids)
 
     if args.structures or args.visualize != 0:
       logging.info('Counting the unique barcode networks..')
@@ -380,7 +380,7 @@ def read_alignments(sam_file, names_to_barcodes, pos_thres, mapq_thres, dist_thr
   return graph, reversed_barcodes, num_good_alignments
 
 
-def get_family_counts(families_file, limit=None, check_names=True):
+def get_family_counts(families_file, limit=None, check_ids=True):
   """For each family (barcode), count how many read pairs exist for each strand (order)."""
   family_counts = {}
   last_barcode = None
@@ -391,7 +391,7 @@ def get_family_counts(families_file, limit=None, check_names=True):
     if limit is not None and read_pairs > limit:
       break
     fields = line.rstrip('\r\n').split('\t')
-    if check_names and not read_names_match(fields[2], fields[5]):
+    if check_ids and not read_ids_match(fields[2], fields[5]):
       raise ValueError('Read names "{2}" and "{5}" do not match.'.format(*fields))
     barcode = fields[0]
     order = fields[1]
@@ -408,12 +408,14 @@ def get_family_counts(families_file, limit=None, check_names=True):
   return family_counts, read_pairs
 
 
-def read_names_match(name1, name2):
-  if name1.endswith('/1'):
-    name1 = name1[:-2]
-  if name2.endswith('/2'):
-    name2 = name2[:-2]
-  return name1 == name2
+def read_ids_match(name1, name2):
+  id1 = name1.split()[0]
+  id2 = name2.split()[0]
+  if id1.endswith('/1'):
+    id1 = id1[:-2]
+  if id2.endswith('/2'):
+    id2 = id2[:-2]
+  return id1 == id2
 
 
 def make_correction_table(meta_graph, family_counts, choose_by='count'):
