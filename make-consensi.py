@@ -66,7 +66,7 @@ def make_argparser():
   io.add_argument('--sscs2', metavar='sscs_2.fa', type=argparse.FileType('w'),
     help=wrap('Save the single-strand consensus sequences (mate 2) in this file (FASTA format). '
               'Warning: This will be overwritten if it exists!'))
-  io.add_argument('-F', '--qual-format', choices=('sanger', 'solexa'), default='sanger',
+  io.add_argument('-F', '--qual-format', choices=QUAL_OFFSETS.keys(), default='sanger',
     help=wrap('FASTQ quality score format. Sanger scores are assumed to begin at \'{}\' ({}). '
               'Default: %(default)s.'.format(QUAL_OFFSETS['sanger'], chr(QUAL_OFFSETS['sanger']))))
   io.add_argument('--fastq-out', metavar='PHRED_SCORE', type=int,
@@ -82,13 +82,13 @@ def make_argparser():
     help=wrap('Base quality threshold. Bases below this quality will not be counted. '
               'Default: %(default)s.'))
   params.add_argument('-c', '--cons-thres', metavar='THRES', type=float, default=0.5,
-    help=wrap('The threshold to use when making consensus sequences. The consensus base must be '
-              'present in more than this fraction of the reads, or N will be used. '
-              'Default: %(default)s'))
+    help=wrap('The fractional threshold to use when making consensus sequences. The consensus base '
+              'must be present in more than this fraction of the reads, or N will be used as the '
+              'consensus base instead. Default: %(default)s'))
   params.add_argument('-C', '--min-cons-reads', type=int, default=0,
-    help=wrap('The minimum number of reads a base must appear in to be used as the consensus base. '
-              'If no base at the position appears in at least this many reads, N will be used as '
-              'the consensus base. Default: %(default)s'))
+    help=wrap('The absolute threshold to use when making consensus sequences. The consensus base '
+              'must be present in more than this number of reads, or N will be used as the '
+              'consensus base instead. Default: %(default)s'))
   phoning = parser.add_argument_group('Feedback')
   phoning.add_argument('--phone-home', action='store_true',
     help=wrap('Report helpful usage data to the developer, to better understand the use cases and '
