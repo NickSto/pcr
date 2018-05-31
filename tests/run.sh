@@ -236,6 +236,10 @@ function consensi_consthres {
           --min-cons-reads 3 --cons-thres 0.7
 }
 
+function consensi_thres {
+  _consensi cons.thres2.msa.tsv cons.thres2.sscs_1.fa cons.thres2.sscs_2.fa empty.txt empty.txt
+}
+
 # variable-length reads
 # make-barcodes.awk
 function varylen_barcodes {
