@@ -176,7 +176,7 @@ initial_declarations_plus_meta=$(declare -F)
 
 # make-barcodes.awk
 function barcodes {
-  echo -e "\tmake-barcodes.awk ::: families.raw_[12].fq"
+  echo -e "\t${FUNCNAME[0]}:\tmake-barcodes.awk ::: families.raw_[12].fq"
   paste "$dirname/families.raw_1.fq" "$dirname/families.raw_2.fq" \
     | paste - - - - \
     | awk -f "$dirname/../make-barcodes.awk" -v TAG_LEN=12 -v INVARIANT=5 \
@@ -186,21 +186,21 @@ function barcodes {
 
 # align-families.py
 function align {
-  echo -e "\talign-families.py ::: families.sort.tsv:"
+  echo -e "\t${FUNCNAME[0]}:\talign-families.py ::: families.sort.tsv:"
   "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align-families.py with 3 processes
 function align_p3 {
-  echo -e "\talign-families.py -p 3 ::: families.sort.tsv:"
+  echo -e "\t${FUNCNAME[0]}:\talign-families.py -p 3 ::: families.sort.tsv:"
   "${cmd_prefix}align-families.py" --no-check-ids -q -p 3 "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align-families.py smoke test
 function align_smoke {
-  echo -e "\talign-families.py ::: smoke.families.tsv:"
+  echo -e "\t${FUNCNAME[0]}:\talign-families.py ::: smoke.families.tsv:"
   "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/smoke.families.tsv" \
     | diff -s - "$dirname/smoke.families.aligned.tsv"
 }
@@ -239,7 +239,7 @@ function consensi_consthres {
 # variable-length reads
 # make-barcodes.awk
 function varylen_barcodes {
-  echo -e "\tmake-barcodes.awk ::: varylen.raw_[12].fq"
+  echo -e "\t${FUNCNAME[0]}:\tmake-barcodes.awk ::: varylen.raw_[12].fq"
   paste "$dirname/varylen.raw_1.fq" "$dirname/varylen.raw_2.fq" \
     | paste - - - - \
     | awk -f "$dirname/../make-barcodes.awk" -v TAG_LEN=12 -v INVARIANT=5 \
@@ -249,7 +249,7 @@ function varylen_barcodes {
 
 # align-families.py
 function varylen_align {
-  echo -e "\talign-families.py ::: varylen.sort.tsv:"
+  echo -e "\t${FUNCNAME[0]}:\talign-families.py ::: varylen.sort.tsv:"
   "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/varylen.sort.tsv" \
     | diff -s - "$dirname/varylen.msa.tsv"
 }
@@ -261,7 +261,7 @@ function varylen_consensi {
 
 # baralign.sh
 function baralign {
-  echo -e "\tbaralign.sh ::: correct.families.tsv:"
+  echo -e "\t${FUNCNAME[0]}:\tbaralign.sh ::: correct.families.tsv:"
   "${cmd_prefix}baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
     | _clean_sam | diff -s - "$dirname/correct.sam"
   rm -rf "$dirname/refdir.tmp"
@@ -269,21 +269,21 @@ function baralign {
 
 # correct.py
 function correct {
-  echo -e "\tcorrect.py ::: correct.sam"
+  echo -e "\t${FUNCNAME[0]}:\tcorrect.py ::: correct.sam"
   "${cmd_prefix}correct.py" --no-check-ids "$dirname/correct.families.tsv" \
       "$dirname/correct.barcodes.fa" "$dirname/correct.sam" \
     | diff -s "$dirname/correct.families.corrected.tsv" -
 }
 
 function stats_diffs {
-  echo -e "\tstats.py diffs ::: gaps.msa.tsv:"
+  echo -e "\t${FUNCNAME[0]}:\tstats.py diffs ::: gaps.msa.tsv:"
   "$dirname/../utils/stats.py" diffs "$dirname/gaps.msa.tsv" \
     | diff -s - "$dirname/gaps-diffs.out.tsv"
 }
 
 
 function precheck {
-  echo -e "\tprecheck.py ::: families.raw_[12].fq"
+  echo -e "\t${FUNCNAME[0]}:\tprecheck.py ::: families.raw_[12].fq"
   "$dirname/../utils/precheck.py" "$dirname/families.raw_1.fq" "$dirname/families.raw_2.fq" \
     | diff -s - "$dirname/families.precheck.tsv"
 }
@@ -293,7 +293,7 @@ function precheck {
 all_declarations_minus_inactive=$(declare -F)
 
 function errstats_simple {
-  echo -e "\terrstats.py ::: families.msa.tsv:"
+  echo -e "\t${FUNCNAME[0]}:\terrstats.py ::: families.msa.tsv:"
   "$dirname/../utils/errstats.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.out.tsv"
   "$dirname/../utils/errstats.py" -R "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.out.tsv"
   "$dirname/../utils/errstats.py" -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-a.out.tsv"
@@ -301,7 +301,7 @@ function errstats_simple {
 }
 
 function errstats_overlap {
-  echo -e "\terrstats.py ::: families.overlap.msa.tsv"
+  echo -e "\t${FUNCNAME[0]}:\terrstats.py ::: families.overlap.msa.tsv"
   "$dirname/../utils/errstats.py" --dedup --min-reads 3 --bam "$dirname/families.overlap.sscs.bam" \
     "$dirname/families.overlap.msa.tsv" --overlap-stats "$dirname/overlaps.tmp.tsv" >/dev/null
   diff -s "$dirname/overlaps.tmp.tsv" "$dirname/families.overlap.overlaps.expected.tsv"
@@ -325,7 +325,7 @@ function _consensi {
     args[$i]=${!i}
     i=$((i+1))
   done
-  echo -e "\tmake-consensi.py ${args[@]} ::: $input:"
+  echo -e "\t${FUNCNAME[1]}:\tmake-consensi.py ${args[@]} ::: $input:"
   "${cmd_prefix}make-consensi.py" ${args[@]} "$dirname/$input" \
     --sscs1 "$dirname/cons.tmp.sscs_1.fa" --sscs2 "$dirname/cons.tmp.sscs_2.fa" \
     --dcs1  "$dirname/cons.tmp.dcs_1.fa"  --dcs2  "$dirname/cons.tmp.dcs_2.fa"
