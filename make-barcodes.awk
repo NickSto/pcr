@@ -56,8 +56,9 @@ BEGIN {
     exit 1
   }
 }
+#TODO: Add option to check read ids to see that they're properly paired.
 
-$3 && $4 {
+length($3) > TAG_LEN+INVARIANT && length($4) > TAG_LEN+INVARIANT {
   alpha = substr($3, 1, TAG_LEN)
   beta = substr($4, 1, TAG_LEN)
   if (alpha < beta) {
