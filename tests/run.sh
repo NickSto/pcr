@@ -208,13 +208,13 @@ function align_smoke {
 # make-consensi.py defaults on toy data
 function consensi {
   _consensi families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa \
-    families.dcs_2.fa
+            families.dcs_2.fa
 }
 
 # make-consensi.py with 3 processes
 function consensi_p3 {
   _consensi families.msa.tsv families.sscs_1.fa families.sscs_2.fa families.dcs_1.fa \
-    families.dcs_2.fa -p 3
+            families.dcs_2.fa -p 3
 }
 
 # make-consensi.py quality score consideration
@@ -229,11 +229,11 @@ function consensi_gapqual {
 
 function consensi_consthres {
   _consensi cons.thres.msa.tsv cons.thres.0.5.sscs_1.fa cons.thres.0.5.sscs_2.fa \
-          cons.thres.0.5.dcs_1.fa cons.thres.0.5.dcs_2.fa \
-          --min-cons-reads 3 --cons-thres 0.5
+            cons.thres.0.5.dcs_1.fa cons.thres.0.5.dcs_2.fa \
+            --min-cons-reads 3 --cons-thres 0.5
   _consensi cons.thres.msa.tsv cons.thres.0.7.sscs_1.fa cons.thres.0.7.sscs_2.fa \
-          cons.thres.0.7.dcs_1.fa cons.thres.0.7.dcs_2.fa \
-          --min-cons-reads 3 --cons-thres 0.7
+            cons.thres.0.7.dcs_1.fa cons.thres.0.7.dcs_2.fa \
+            --min-cons-reads 3 --cons-thres 0.7
 }
 
 function consensi_thres {
