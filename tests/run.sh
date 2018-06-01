@@ -177,9 +177,10 @@ initial_declarations_plus_meta=$(declare -F)
 # make-barcodes.awk
 function barcodes {
   echo -e "\t${FUNCNAME[0]}:\tmake-barcodes.awk ::: families.raw_[12].fq"
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" make-barcodes.awk); then return 1; fi
   paste "$dirname/families.raw_1.fq" "$dirname/families.raw_2.fq" \
     | paste - - - - \
-    | awk -f "$dirname/../make-barcodes.awk" -v TAG_LEN=12 -v INVARIANT=5 \
+    | awk -f "${local_prefix}make-barcodes.awk" -v TAG_LEN=12 -v INVARIANT=5 \
     | sort \
     | diff -s - "$dirname/families.sort.tsv"
 }
@@ -187,21 +188,24 @@ function barcodes {
 # align-families.py
 function align {
   echo -e "\t${FUNCNAME[0]}:\talign-families.py ::: families.sort.tsv:"
-  "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/families.sort.tsv" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" align-families.py); then return 1; fi
+  "${local_prefix}align-families.py" --no-check-ids -q "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align-families.py with 3 processes
 function align_p3 {
   echo -e "\t${FUNCNAME[0]}:\talign-families.py -p 3 ::: families.sort.tsv:"
-  "${cmd_prefix}align-families.py" --no-check-ids -q -p 3 "$dirname/families.sort.tsv" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" align-families.py); then return 1; fi
+  "${local_prefix}align-families.py" --no-check-ids -q -p 3 "$dirname/families.sort.tsv" \
     | diff -s - "$dirname/families.msa.tsv"
 }
 
 # align-families.py smoke test
 function align_smoke {
   echo -e "\t${FUNCNAME[0]}:\talign-families.py ::: smoke.families.tsv:"
-  "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/smoke.families.tsv" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" align-families.py); then return 1; fi
+  "${local_prefix}align-families.py" --no-check-ids -q "$dirname/smoke.families.tsv" \
     | diff -s - "$dirname/smoke.families.aligned.tsv"
 }
 
@@ -244,9 +248,10 @@ function consensi_thres {
 # make-barcodes.awk
 function varylen_barcodes {
   echo -e "\t${FUNCNAME[0]}:\tmake-barcodes.awk ::: varylen.raw_[12].fq"
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" make-barcodes.awk); then return 1; fi
   paste "$dirname/varylen.raw_1.fq" "$dirname/varylen.raw_2.fq" \
     | paste - - - - \
-    | awk -f "$dirname/../make-barcodes.awk" -v TAG_LEN=12 -v INVARIANT=5 \
+    | awk -f "${local_prefix}make-barcodes.awk" -v TAG_LEN=12 -v INVARIANT=5 \
     | sort \
     | diff -s - "$dirname/varylen.sort.tsv"
 }
@@ -254,7 +259,8 @@ function varylen_barcodes {
 # align-families.py
 function varylen_align {
   echo -e "\t${FUNCNAME[0]}:\talign-families.py ::: varylen.sort.tsv:"
-  "${cmd_prefix}align-families.py" --no-check-ids -q "$dirname/varylen.sort.tsv" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" align-families.py); then return 1; fi
+  "${local_prefix}align-families.py" --no-check-ids -q "$dirname/varylen.sort.tsv" \
     | diff -s - "$dirname/varylen.msa.tsv"
 }
 
@@ -266,7 +272,8 @@ function varylen_consensi {
 # baralign.sh
 function baralign {
   echo -e "\t${FUNCNAME[0]}:\tbaralign.sh ::: correct.families.tsv:"
-  "${cmd_prefix}baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" baralign.sh); then return 1; fi
+  "${local_prefix}baralign.sh" "$dirname/correct.families.tsv" "$dirname/refdir.tmp" 2>/dev/null \
     | _clean_sam | diff -s - "$dirname/correct.sam"
   rm -rf "$dirname/refdir.tmp"
 }
@@ -274,21 +281,24 @@ function baralign {
 # correct.py
 function correct {
   echo -e "\t${FUNCNAME[0]}:\tcorrect.py ::: correct.sam"
-  "${cmd_prefix}correct.py" --no-check-ids "$dirname/correct.families.tsv" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" correct.py); then return 1; fi
+  "${local_prefix}correct.py" --no-check-ids "$dirname/correct.families.tsv" \
       "$dirname/correct.barcodes.fa" "$dirname/correct.sam" \
     | diff -s "$dirname/correct.families.corrected.tsv" -
 }
 
 function stats_diffs {
   echo -e "\t${FUNCNAME[0]}:\tstats.py diffs ::: gaps.msa.tsv:"
-  "$dirname/../utils/stats.py" diffs "$dirname/gaps.msa.tsv" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" utils/stats.py); then return 1; fi
+  "${local_prefix}stats.py" diffs "$dirname/gaps.msa.tsv" \
     | diff -s - "$dirname/gaps-diffs.out.tsv"
 }
 
 
 function precheck {
   echo -e "\t${FUNCNAME[0]}:\tprecheck.py ::: families.raw_[12].fq"
-  "$dirname/../utils/precheck.py" "$dirname/families.raw_1.fq" "$dirname/families.raw_2.fq" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" utils/precheck.py); then return 1; fi
+  "${local_prefix}precheck.py" "$dirname/families.raw_1.fq" "$dirname/families.raw_2.fq" \
     | diff -s - "$dirname/families.precheck.tsv"
 }
 
@@ -298,15 +308,17 @@ all_declarations_minus_inactive=$(declare -F)
 
 function errstats_simple {
   echo -e "\t${FUNCNAME[0]}:\terrstats.py ::: families.msa.tsv:"
-  "$dirname/../utils/errstats.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.out.tsv"
-  "$dirname/../utils/errstats.py" -R "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.out.tsv"
-  "$dirname/../utils/errstats.py" -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-a.out.tsv"
-  "$dirname/../utils/errstats.py" -R -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.-a.out.tsv"
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" utils/errstats.py); then return 1; fi
+  "${local_prefix}errstats.py" "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.out.tsv"
+  "${local_prefix}errstats.py" -R "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.out.tsv"
+  "${local_prefix}errstats.py" -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-a.out.tsv"
+  "${local_prefix}errstats.py" -R -a "$dirname/families.msa.tsv" | diff -s - "$dirname/errstats.-R.-a.out.tsv"
 }
 
 function errstats_overlap {
   echo -e "\t${FUNCNAME[0]}:\terrstats.py ::: families.overlap.msa.tsv"
-  "$dirname/../utils/errstats.py" --dedup --min-reads 3 --bam "$dirname/families.overlap.sscs.bam" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" utils/errstats.py); then return 1; fi
+  "${local_prefix}errstats.py" --dedup --min-reads 3 --bam "$dirname/families.overlap.sscs.bam" \
     "$dirname/families.overlap.msa.tsv" --overlap-stats "$dirname/overlaps.tmp.tsv" >/dev/null
   diff -s "$dirname/overlaps.tmp.tsv" "$dirname/families.overlap.overlaps.expected.tsv"
   if [[ -f "$dirname/overlaps.tmp.tsv" ]]; then
@@ -330,7 +342,8 @@ function _consensi {
     i=$((i+1))
   done
   echo -e "\t${FUNCNAME[1]}:\tmake-consensi.py ${args[@]} ::: $input:"
-  "${cmd_prefix}make-consensi.py" ${args[@]} "$dirname/$input" \
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" make-consensi.py); then return 1; fi
+  "${local_prefix}make-consensi.py" ${args[@]} "$dirname/$input" \
     --sscs1 "$dirname/cons.tmp.sscs_1.fa" --sscs2 "$dirname/cons.tmp.sscs_2.fa" \
     --dcs1  "$dirname/cons.tmp.dcs_1.fa"  --dcs2  "$dirname/cons.tmp.dcs_2.fa"
   diff -s "$dirname/cons.tmp.sscs_1.fa" "$dirname/$sscs1"
@@ -357,6 +370,29 @@ function _clean_sam {
       }
       printf("\n")
     }'
+}
+
+function _get_local_prefix {
+  local cmd_prefix="$1"
+  postfix="$2"
+  base=$(basename "$postfix")
+  if [[ "$cmd_prefix" ]]; then
+    path="${cmd_prefix}$postfix"
+    local_prefix=$(dirname "${cmd_prefix}$postfix")/
+  else
+    # If $cmd_prefix is blank, the user wants to try to execute scripts via the $PATH.
+    # Use the basename of the $postfix, removing any directories before the actual script.
+    path="$base"
+    local_prefix=
+  fi
+  if which "$path" >/dev/null 2>/dev/null; then
+    echo "$local_prefix"
+  elif [[ -f "$path" ]]; then
+    echo "$local_prefix"
+  else
+    echo -e "\e[31mError: $base missing!\e[m Searched for: \"$path\"" >&2
+    return 1
+  fi
 }
 
 main "$@"
