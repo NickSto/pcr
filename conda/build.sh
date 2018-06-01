@@ -21,7 +21,7 @@ get_submodule () {
 get_submodule kalign  0.2.0 makovalab-psu kalign-dunovo 473dd562f520a218df2dd147c89940422344adad6d8824141bffe6466c6d40e7
 get_submodule utillib 0.1.0 NickSto       utillib       bffe515f7bd98661657c26003c41c1224f405c3a36ddabf5bf961fab86f9651a
 get_submodule ET      0.2.2 NickSto       ET            11dc5cb02521a2260e6c88a83d489c72f819bd759aeff31d66aa40ca2f1358a6
-get_submodule bfx     0.1.0 NickSto       bfx           b17857512d46cf62164f5f39d7185f741b68b75938fa39c8a8b43f9380a277db
+get_submodule bfx     0.2.0 NickSto       bfx           252d31dc260882f203d04624945c8abb4940f3ae4b03a5050182d23854488ef8
 
 # Compile binaries and move them to lib.
 make
@@ -34,9 +34,7 @@ for script in *.awk *.sh *.py; do
   ln -s "../lib/$script" "$PREFIX/bin"
 done
 # Handle special cases.
-mv utils/getreads.py "$PREFIX/lib"
 mv utils/precheck.py "$PREFIX/lib"
-mv bfx/trimmer.py "$PREFIX/lib"
 ln -s ../lib/precheck.py "$PREFIX/bin"
-ln -s ../lib/trimmer.py "$PREFIX/bin"
+ln -s ../lib/bfx/trimmer.py "$PREFIX/bin"
 mv VERSION "$PREFIX/lib"
