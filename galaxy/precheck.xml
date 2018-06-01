@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
-<tool id="precheck" name="Du Novo: Check input" version="2.14">
+<tool id="precheck" name="Du Novo: Check input" version="2.15">
   <requirements>
-    <requirement type="package" version="2.14">dunovo</requirement>
+    <requirement type="package" version="2.15">dunovo</requirement>
   </requirements>
   <description>for family content</description>
   <command detect_errors="exit_code">
