@@ -23,16 +23,21 @@ outfile: Print the output to this path. It will be in SAM format unless the
 function main {
 
   # Read in arguments and check them.
+  if [[ "$#" -ge 1 ]] && [[ "$1" == '--version' ]]; then
+    version
+    return
+  fi
 
   threads=1
   reverse=true
   chunkmbs=$DefaultChunkMbs
-  while getopts ":rhc:t:" opt; do
-  case "$opt" in
+  while getopts ":rhc:tv:" opt; do
+    case "$opt" in
       r) reverse='';;
       h) fail "$Usage";;
       t) threads=$OPTARG;;
       c) chunkmbs=$OPTARG;;
+      v) version && return;;
     esac
   done
   # Get positional arguments.
@@ -166,6 +171,22 @@ outbase:  $outbase" >&2
       fail "Warning: No output file \"$outfile\" found."
     fi
   fi
+}
+
+function version {
+  script_dir=$(get_script_dir)
+  "$script_dir/utillib/version.py" --config-path "$script_dir/VERSION" --repo-dir "$script_dir"
+}
+
+function get_script_dir {
+  # Find the actual directory this file resides in (resolving links).
+  if readlink -f dummy >/dev/null 2>/dev/null; then
+    script_path=$(readlink -f "${BASH_SOURCE[0]}")
+  else
+    # readlink -f doesn't work on BSD systems.
+    script_path=$(perl -MCwd -le 'print Cwd::abs_path(shift)' "${BASH_SOURCE[0]}")
+  fi
+  dirname "$script_path"
 }
 
 function fail {

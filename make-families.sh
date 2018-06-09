@@ -15,16 +15,21 @@ Read raw duplex sequencing reads, extract their barcodes, and group them by barc
 function main {
 
   # Read arguments.
-  if [[ "$#" -lt 2 ]] || [[ "$1" == '--help' ]]; then
+  if [[ "$#" -lt 1 ]] || [[ "$1" == '--help' ]]; then
     fail "$Usage"
+  fi
+  if [[ "$#" -ge 1 ]] && [[ "$1" == '--version' ]]; then
+    version
+    return
   fi
   taglen=$TagLenDefault
   invariant=$InvariantDefault
-  while getopts ":t:i:h" opt; do
-  case "$opt" in
+  while getopts ":t:i:vh" opt; do
+    case "$opt" in
       t) taglen=$OPTARG;;
       i) invariant=$OPTARG;;
       h) fail "$USAGE";;
+      v) version && return;;
     esac
   done
   # Get positionals.
@@ -32,7 +37,8 @@ function main {
   fastq2="${@:$OPTIND+1:1}"
 
   if ! [[ "$fastq1" ]] || ! [[ "$fastq2" ]]; then
-    fail "Error: Must provide two input fastq files."
+    fail "$Usage
+Error: Must provide two input fastq files."
   fi
 
   script_dir=$(get_script_dir)
@@ -44,11 +50,17 @@ function main {
 
 }
 
+function version {
+  script_dir=$(get_script_dir)
+  "$script_dir/utillib/version.py" --config-path "$script_dir/VERSION" --repo-dir "$script_dir"
+}
+
 function get_script_dir {
   # Find the actual directory this file resides in (resolving links).
   if readlink -f dummy >/dev/null 2>/dev/null; then
     script_path=$(readlink -f "${BASH_SOURCE[0]}")
   else
+    # readlink -f doesn't work on BSD systems.
     script_path=$(perl -MCwd -le 'print Cwd::abs_path(shift)' "${BASH_SOURCE[0]}")
   fi
   dirname "$script_path"
