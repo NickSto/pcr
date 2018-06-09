@@ -11,7 +11,12 @@ Usage="Usage: \$ $(basename $0) [-t tag_len] [-i invariant_len] reads_1.fq reads
 Read raw duplex sequencing reads, extract their barcodes, and group them by barcode.
 Input fastq's can be gzipped.
 -t: The length of the barcode portion of each read. Default: $TagLenDefault
--i: The length of the invariant (ligation) portion of each read. Default: $InvariantDefault"
+-i: The length of the invariant (ligation) portion of each read. Default: $InvariantDefault
+-S: The memory usage parameter to pass directly to the sort command's -S option.
+    Can be an absolute figure like 5G or a percentage. See man sort for details.
+-T: The temporary file directory that sort should use.
+    Will be passed directly to the sort command's -T option."
+
 
 function main {
 
@@ -25,10 +30,14 @@ function main {
   fi
   taglen=$TagLenDefault
   invariant=$InvariantDefault
-  while getopts ":t:i:vh" opt; do
+  mem_arg=
+  tmp_arg=
+  while getopts ":t:i:S:T:vh" opt; do
     case "$opt" in
       t) taglen=$OPTARG;;
       i) invariant=$OPTARG;;
+      S) mem_arg="-S $OPTARG";;
+      T) tmp_arg="-T '$OPTARG'";;
       h) fail "$USAGE";;
       v) version && return;;
     esac
@@ -53,12 +62,12 @@ Error: Must provide two input fastq files."
     paste <(gunzip -c "$fastq1") <(gunzip -c "$fastq2") \
       | paste - - - - \
       | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN=$taglen -v INVARIANT=$invariant \
-      | sort
+      | sort $mem_arg $tmp_arg
   elif ! [[ "$fq1_is_gzip" ]] && ! [[ "$fq2_is_gzip" ]]; then
     paste "$fastq1" "$fastq2" \
       | paste - - - - \
       | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN=$taglen -v INVARIANT=$invariant \
-      | sort
+      | sort $mem_arg $tmp_arg
   else
     fail "Error: Both fastq's must be either gzipped or not. No mixing is allowed."
   fi
