@@ -9,6 +9,7 @@ TagLenDefault=12
 InvariantDefault=5
 Usage="Usage: \$ $(basename $0) [-t tag_len] [-i invariant_len] reads_1.fq reads_2.fq > families.tsv
 Read raw duplex sequencing reads, extract their barcodes, and group them by barcode.
+Input fastq's can be gzipped.
 -t: The length of the barcode portion of each read. Default: $TagLenDefault
 -i: The length of the invariant (ligation) portion of each read. Default: $InvariantDefault"
 
@@ -43,11 +44,40 @@ Error: Must provide two input fastq files."
 
   script_dir=$(get_script_dir)
 
-  paste "$fastq1" "$fastq2" \
-    | paste - - - - \
-    | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN=$taglen -v INVARIANT=$invariant \
-    | sort
+  # Are the input files gzipped?
+  fq1_is_gzip=$(is_gzip "$fastq1")
+  fq2_is_gzip=$(is_gzip "$fastq2")
 
+  # The actual command pipeline that creates the families.
+  if [[ "$fq1_is_gzip" ]] && [[ "$fq2_is_gzip" ]]; then
+    paste <(gunzip -c "$fastq1") <(gunzip -c "$fastq2") \
+      | paste - - - - \
+      | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN=$taglen -v INVARIANT=$invariant \
+      | sort
+  elif ! [[ "$fq1_is_gzip" ]] && ! [[ "$fq2_is_gzip" ]]; then
+    paste "$fastq1" "$fastq2" \
+      | paste - - - - \
+      | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN=$taglen -v INVARIANT=$invariant \
+      | sort
+  else
+    fail "Error: Both fastq's must be either gzipped or not. No mixing is allowed."
+  fi
+}
+
+function is_gzip {
+  path="$1"
+  ext2="${path:$((${#path}-3))}"
+  ext5="${path:$((${#path}-6))}"
+  if [[ "$ext2" == '.gz' ]]; then
+    echo yes
+  elif [[ "$ext2" == '.fq' ]] || [[ "$ext5" == '.fastq' ]]; then
+    return
+  else
+    filetype=$(file -ib "$path")
+    if [[ "${filetype:0:16}" == 'application/gzip' ]]; then
+      echo yes
+    fi
+  fi
 }
 
 function version {
