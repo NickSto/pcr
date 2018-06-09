@@ -24,8 +24,7 @@ function main {
   case "$opt" in
       t) taglen=$OPTARG;;
       i) invariant=$OPTARG;;
-      h) echo "$USAGE"
-         exit;;
+      h) fail "$USAGE";;
     esac
   done
   # Get positionals.
@@ -36,19 +35,23 @@ function main {
     fail "Error: Must provide two input fastq files."
   fi
 
-  # Find the actual directory this file resides in (resolving links).
-  if readlink -f dummy >/dev/null 2>/dev/null; then
-    script_path=$(readlink -f "${BASH_SOURCE[0]}")
-  else
-    script_path=$(perl -MCwd -le 'print Cwd::abs_path(shift)' "${BASH_SOURCE[0]}")
-  fi
-  script_dir=$(dirname "$script_path")
+  script_dir=$(get_script_dir)
 
   paste "$fastq1" "$fastq2" \
     | paste - - - - \
     | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN=$taglen -v INVARIANT=$invariant \
     | sort
 
+}
+
+function get_script_dir {
+  # Find the actual directory this file resides in (resolving links).
+  if readlink -f dummy >/dev/null 2>/dev/null; then
+    script_path=$(readlink -f "${BASH_SOURCE[0]}")
+  else
+    script_path=$(perl -MCwd -le 'print Cwd::abs_path(shift)' "${BASH_SOURCE[0]}")
+  fi
+  dirname "$script_path"
 }
 
 function fail {
