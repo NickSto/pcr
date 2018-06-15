@@ -8,7 +8,7 @@ set -ue
 STAT_NAMES=(cpu mem vsz rss)
 SleepDefault=5
 DebugPrintInterval=5 # minutes
-Usage="Usage: \$ $(basename "$0") [options] [-k key | -p ppid]
+Usage="Usage: \$ $(basename "$0") [options] [-k key | -p ppid | command arg1 arg2 etc]
 Monitor the resource usage of a set of processes and print the maximums.
 You must give one of:
 -k: A key to find the processes. This should be one of the arguments included
@@ -38,16 +38,17 @@ function main {
       h) fail "$Usage";;
     esac
   done
+  command_args=${@:$OPTIND}
 
-  if ! [[ "$key" ]] && ! [[ "$ppid" ]]; then
-    fail "Error: You must provide a -k key or -p ppid."
+  if ! [[ "$key" ]] && ! [[ "$ppid" ]] && ! [[ "$command_args" ]]; then
+    fail "Error: You must provide a -k key, -p ppid, or a command."
   fi
 
   # Initialize the arrays.
   declare -a maxes stats
   for i in 0 1 2 3; do
-    maxes[$i]=
-    stats[$i]=
+    maxes[$i]=0
+    stats[$i]=0
   done
 
   # Main loop: monitor the process.
@@ -56,10 +57,18 @@ function main {
   while [[ "${stats[0]}" -gt 0 ]]; do
     sleep "$sleep"
     if [[ "$key" ]]; then
-      read -a stats <<< $(get_stats_by_key "$key")
+      pids=$(get_pids_by_key "$key")
     elif [[ "$ppid" ]]; then
-      read -a stats <<< $(get_stats_by_ppid "$ppid")
+      pids=$(get_pids_by_ppid "$ppid")
+    else
+      pids=$(get_pids_by_cmd $command_args)
     fi
+    if ! [[ "$pids" ]]; then
+      echo "Did not find any living processes." >&2
+      break
+    fi
+    read -a stats <<< $(get_stats_by_pids $pids)
+    # Check for maximum stats.
     i=0
     while [[ "$i" -lt "${#stats[@]}" ]]; do
       if [[ "${stats[$i]}" -gt "${maxes[$i]}" ]]; then
@@ -85,7 +94,9 @@ function main {
   while [[ "$i" -lt "${#maxes[@]}" ]]; do
     max="${maxes[$i]}"
     if ! [[ "$max" ]]; then
-      fail "Error: No value detected for stat ${STAT_NAMES[$i]}."
+      fail "Error: No max value detected for stat ${STAT_NAMES[$i]}.
+All max values:   ${maxes[@]}
+Last stat values: ${stats[@]}"
     fi
     if [[ "$i" -lt 2 ]]; then
       max=$(calc "$max/100")
@@ -115,7 +126,22 @@ function recursive_pgrep {
 }
 
 
-function get_stats_by_ppid {
+function get_pids_by_key {
+  key="$1"
+  ps aux | awk '
+    $1 == "'"$USER"'" && $2 != '"$$"' {
+      hit = 0
+      for (i=11; i<=NF; i++) {
+        if ($i == "'"$key"'") {
+          print $2
+          break
+        }
+      }
+    }'
+}
+
+
+function get_pids_by_ppid {
   ppid="$1"
   pid_conditional=
   for pid in $(recursive_pgrep "$ppid"); do
@@ -131,6 +157,40 @@ function get_stats_by_ppid {
   fi
   ps aux | awk '
     $1 == "'"$USER"'" && $2 != '"$$"' && ('"$pid_conditional"') {
+      print $2
+    }'
+}
+
+
+function get_pids_by_cmd {
+  command_args=$@
+  i=11
+  cmd_conditionals=
+  for arg in $command_args; do
+    cmd_conditional="\$$i == \"$arg\""
+    if [[ "$cmd_conditionals" ]]; then
+      cmd_conditionals="$cmd_conditionals && $cmd_conditional"
+    else
+      cmd_conditionals="$cmd_conditional"
+    fi
+    i=$((i+1))
+  done
+  ps aux | awk "\$1 == \"$USER\" && $cmd_conditionals {print \$2}"
+}
+
+
+function get_stats_by_pids {
+  pids=$@
+  if ! [[ "$pids" ]]; then
+    echo
+    return
+  fi
+  pid_conditionals=$(get_pid_conditionals $pids)
+  ps aux | awk '
+    BEGIN {
+      OFS = "\t"
+    }
+    '"$pid_conditionals"' {
       cpu += $3
       mem += $4
       vsz += $5
@@ -142,29 +202,18 @@ function get_stats_by_ppid {
 }
 
 
-function get_stats_by_key {
-  key="$1"
-  ps aux | awk '
-    BEGIN {
-      OFS = "\t"
-    }
-    $1 == "'"$USER"'" && $2 != '"$$"' {
-      hit = 0
-      for (i=11; i<=NF; i++) {
-        if ($i == "'"$key"'") {
-          hit = "true"
-        }
-      }
-      if (hit) {
-        cpu += $3
-        mem += $4
-        vsz += $5
-        rss += $6
-      }
-    }
-    END {
-      print int(100*cpu), int(100*mem), vsz, rss
-    }'
+function get_pid_conditionals {
+  pids=$@
+  pid_conditionals=
+  for pid in $pids; do
+    pid_conditional="\$2 == $pid"
+    if [[ "$pid_conditionals" ]]; then
+      pid_conditionals="$pid_conditionals || $pid_conditional"
+    else
+      pid_conditionals="$pid_conditional"
+    fi
+  done
+  echo "$pid_conditionals"
 }
 
 

@@ -82,7 +82,7 @@ function main {
           break
         fi
       done
-      for algorithm in mafft kalign; do
+      for algorithm in kalign mafft; do
         if [[ "$age" == old ]]; then
           if [[ "$algorithm" == kalign ]]; then
             continue
@@ -102,13 +102,16 @@ function main {
             print_newly_finished "$unfinished"
             unfinished=$(get_unfinished "$stats_files")
           done
+          sleep 5
+          # Create instance-specific names.
           id="align.$age.$algorithm.$workers.$i"
           outfile=$(tempfile --prefix "out." --suffix .tsv)
           stats_file=$(tempfile --prefix "stats." --suffix .tsv)
           job_name="align$workers$age$i$algorithm"
+          # Execute the command via the monitoring script.
           echo "Running $age script using $algorithm and $workers workers (replicate $i).." >&2
           "$measure_cmd" -i "$id" $slurm -j "$job_name" -o "$outfile" \
-            "$path/$script_name" -p "$workers" $algo_args "$infile" > "$stats_file" &
+            python "$path/$script_name" -p "$workers" $algo_args "$infile" > "$stats_file" &
           stats_files="$stats_files $stats_file"
           unfinished="$unfinished $stats_file"
         done
