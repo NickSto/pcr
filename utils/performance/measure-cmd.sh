@@ -88,8 +88,8 @@ function main {
   $monitor_prefix "$script_dir/mem-mon.sh" $debug $monitor_selector > "$mem_file" &
 
   # Run the actual command.
-  $slurm_args "$time_cmd" -f '%e\t%S\t%U\t%M' -o "$time_file" "$command" $command_args \
-    | gzip -c - > "$outfile" 2>/dev/null
+  $slurm_args "$time_cmd" -f '%e\t%S\t%U\t%M' -o "$time_file" "$command" $command_args 2>/dev/null \
+    | gzip -c - > "$outfile"
 
   # Wait for the memory monitoring script to register that the command finished.
   while ! [[ -s "$mem_file" ]]; do
@@ -110,6 +110,8 @@ function main {
   rm "$mem_file" "$time_file"
   if [[ -f "$outfile" ]]; then
     rm "$outfile"
+  elif [[ "$outfile" != /dev/null ]]; then
+    echo "Error: Could not find and delete $outfile" >&2
   fi
 }
 

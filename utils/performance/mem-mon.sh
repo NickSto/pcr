@@ -54,6 +54,7 @@ function main {
   # Main loop: monitor the process.
   last_report=$(date +%s)
   stats[0]=1
+  first_loop=true
   while [[ "${stats[0]}" -gt 0 ]]; do
     sleep "$sleep"
     if [[ "$key" ]]; then
@@ -64,9 +65,14 @@ function main {
       pids=$(get_pids_by_cmd $command_args)
     fi
     if ! [[ "$pids" ]]; then
-      echo "Did not find any living processes." >&2
+      if [[ "$first_loop" ]]; then
+        echo "Error: Did not find any processes." >&2
+      else
+        echo "No more living processes. Ending monitoring." >&2
+      fi
       break
     fi
+    first_loop=
     read -a stats <<< $(get_stats_by_pids $pids)
     # Check for maximum stats.
     i=0
