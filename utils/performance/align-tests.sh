@@ -28,7 +28,7 @@ function main {
       v) new_version="$OPTARG";;
       V) old_version="$OPTARG";;
       s) slurm='-s';;
-      D) debug=true;;
+      D) debug='-D';;
       h) fail "$Usage";;
       ?) fail "$Usage";;
     esac
@@ -41,6 +41,7 @@ function main {
   if ! [[ -f "$infile" ]]; then
     fail "Error: Could not find input file $infile"
   fi
+  infile_alias="$infile"
 
   # Code paths and versions.
 
@@ -105,13 +106,18 @@ function main {
           sleep 5
           # Create instance-specific names.
           id="align.$age.$algorithm.$workers.$i"
-          outfile=$(tempfile --prefix "out." --suffix .tsv)
+          outfile=$(tempfile --prefix "out." --suffix .gz)
           stats_file=$(tempfile --prefix "stats." --suffix .tsv)
           job_name="align$workers$age$i$algorithm"
+          if [[ "$slurm" ]]; then
+            # Hack to make the command arguments unique, even between replicates.
+            infile_alias="$infile.$RANDOM.tsv"
+            ln -s "$(basename "$infile")" "$infile_alias"
+          fi
           # Execute the command via the monitoring script.
           echo "Running $age script using $algorithm and $workers workers (replicate $i).." >&2
-          "$measure_cmd" -i "$id" $slurm -j "$job_name" -o "$outfile" \
-            python "$path/$script_name" -p "$workers" $algo_args "$infile" > "$stats_file" &
+          "$measure_cmd" $debug -i "$id" $slurm -j "$job_name" -o "$outfile" \
+            python "$path/$script_name" -p "$workers" $algo_args "$infile_alias" > "$stats_file" &
           stats_files="$stats_files $stats_file"
           unfinished="$unfinished $stats_file"
         done
@@ -120,8 +126,16 @@ function main {
   done
 
   print_newly_finished "$unfinished"
+
+  # Clean up.
   for stats_file in $unfinished; do
     rm "$stats_file"
+  done
+  indir=$(dirname "$infile")
+  for file in $(ls "$indir"); do
+    if echo "$file" | grep -qE "$infile\.[0-9]+\.tsv"; then
+      rm "$file"
+    fi
   done
 }
 

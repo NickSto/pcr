@@ -89,7 +89,7 @@ function main {
 
   # Run the actual command.
   $slurm_args "$time_cmd" -f '%e\t%S\t%U\t%M' -o "$time_file" "$command" $command_args \
-    > "$outfile" 2>/dev/null
+    | gzip -c - > "$outfile" 2>/dev/null
 
   # Wait for the memory monitoring script to register that the command finished.
   while ! [[ -s "$mem_file" ]]; do
@@ -108,6 +108,9 @@ function main {
 
   # Clean up.
   rm "$mem_file" "$time_file"
+  if [[ -f "$outfile" ]]; then
+    rm "$outfile"
+  fi
 }
 
 function get_script_dir {
