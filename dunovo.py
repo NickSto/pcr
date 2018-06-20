@@ -39,8 +39,8 @@ def make_argparser():
     help='make-consensi.py --min-reads. Default: the make-consensi.py default.')
   params.add_argument('-q', '--qual', type=int,
     help='make-consensi.py --qual. Default: the make-consensi.py default.')
-  params.add_argument('-c', '--cons-thres', type=float,
-    help='make-consensi.py --cons-thres. Default: the make-consensi.py default.')
+  params.add_argument('-c', '--cons-thres', type=float, default=0.7,
+    help='make-consensi.py --cons-thres. Default: %(default)s.')
   params.add_argument('-C', '--min-cons-reads', type=int,
     help='make-consensi.py --min-cons-reads. Default: the make-consensi.py default.')
   params.add_argument('-Q', '--fake-phred', type=int, default=40,
