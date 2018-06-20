@@ -31,7 +31,7 @@ function main {
   threads=1
   reverse=true
   chunkmbs=$DefaultChunkMbs
-  while getopts ":rhc:tv:" opt; do
+  while getopts ":rhc:t:v:" opt; do
     case "$opt" in
       r) reverse='';;
       h) fail "$Usage";;
