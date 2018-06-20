@@ -178,7 +178,7 @@ def open_as_text_or_gzip(path):
   """Return an open file-like object reading the path as a text file or a gzip file, depending on
   which it looks like."""
   if detect_gzip(path):
-    return gzip.open(path, 'r')
+    return gzip.open(path, 'rt')
   else:
     return open(path, 'rU')
 
