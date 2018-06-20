@@ -157,9 +157,12 @@ def open_as_text_or_gzip(path):
   """Return an open file-like object reading the path as a text file or a gzip file, depending on
   which it looks like."""
   if detect_gzip(path):
-    return gzip.open(path, 'rt')
+    file_obj = gzip.open(path, 'rt')
+    file_obj.type = 'gzip'
   else:
-    return open(path, 'rU')
+    file_obj = open(path, 'rU')
+    file_obj.type = 'raw'
+  return file_obj
 
 
 def detect_gzip(path):
@@ -260,8 +263,10 @@ def paste_magic(reads1, reads2):
 
 def estimate_filesize(file_obj):
   size = os.path.getsize(file_obj.name)
-  if isinstance(file_obj, gzip.GzipFile):
+  if file_obj.type == 'gzip':
+    logging.warning('Input is gzip. Tripling estimated filesize from {}.'.format(size, size*3))
     size = size * 3
+  logging.warning('Estimated filesize: {} bytes'.format(size))
   return size
 
 
