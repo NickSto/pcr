@@ -49,8 +49,8 @@ def make_argparser():
     help='Pass --no-check-ids to correct.py and align-families.py.')
   params.add_argument('-p', '--processes', type=int,
     help='align-families.py --processes. Default: the align-families.py default.')
-  params.add_argument('-t', '--threads', type=int, default=1,
-    help='baralign.sh -t. Default: %(default)s')
+  params.add_argument('-t', '--threads', type=int,
+    help='baralign.sh -t. Default: the baralign.sh default.')
   log = parser.add_argument_group('Logging')
   log.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
@@ -125,8 +125,11 @@ def main(argv):
 
   # The 2nd pipeline.
   # $ baralign.sh
-  command = [os.path.join(args.dunovo_dir, 'baralign.sh'), '-t', str(args.threads),
+  command = [os.path.join(args.dunovo_dir, 'baralign.sh'),
              paths['families'], paths['refdir'], paths['correct_sam']]
+  if args.threads:
+    command.insert(1, '-t')
+    command.insert(2, str(args.threads))
   logging.warning('$ '+' '.join(command))
   baralign = subprocess.Popen(command)
   result = baralign.wait()
