@@ -70,53 +70,10 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
 
   # Create and check output paths.
-  if args.outdir:
-    outdir = args.outdir
-  else:
-    outdir = os.path.dirname(args.fastq1.name) or '.'
-  if not os.path.isdir(outdir):
-    fail('Error: Output directory {!r} does not exist.'.format(outdir))
-  if args.suffix:
-    suffix = '.'+args.suffix
-  else:
-    suffix = ''
-  paths = {
-    'families': os.path.join(outdir, 'families{}.tsv'.format(suffix)),
-    'refdir': os.path.join(outdir, 'refdir{}'.format(suffix)),
-    'correct_sam': os.path.join(outdir, 'correct{}.sam'.format(suffix)),
-    'families_corrected': os.path.join(outdir, 'families.corrected{}.tsv'.format(suffix)),
-    'msa': os.path.join(outdir, 'families.msa{}.tsv'.format(suffix)),
-    'sscs1': os.path.join(outdir, 'sscs{}_1.fq'.format(suffix)),
-    'sscs2': os.path.join(outdir, 'sscs{}_2.fq'.format(suffix)),
-    'duplex1': os.path.join(outdir, 'duplex{}_1.fq'.format(suffix)),
-    'duplex2': os.path.join(outdir, 'duplex{}_2.fq'.format(suffix)),
-  }
-  log_paths = {
-    'make-barcodes': os.path.join(outdir, 'make-barcodes{}.log'.format(suffix)),
-    'sort1': os.path.join(outdir, 'sort1{}.log'.format(suffix)),
-    'baralign': os.path.join(outdir, 'baralign{}.log'.format(suffix)),
-    'correct': os.path.join(outdir, 'correct{}.log'.format(suffix)),
-    'sort2': os.path.join(outdir, 'sort2{}.log'.format(suffix)),
-    'align-families': os.path.join(outdir, 'align-families{}.log'.format(suffix)),
-    'make-consensi': os.path.join(outdir, 'make-consensi{}.log'.format(suffix)),
-  }
-  existing_paths = False
-  for path in list(paths.values()) + list(log_paths.values()):
-    # We won't actually write to log files if --log wasn't given.
-    if path.endswith('.log') and args.log is sys.stderr:
-      continue
-    if os.path.exists(path):
-      existing_paths = True
-      logging.critical('Error: {!r} already exists.'.format(path))
-  if existing_paths:
+  paths, log_paths = make_paths(args.outdir, args.fastq1.name, args.suffix)
+  if invalid_paths(paths, log_paths, args.log):
     return 1
-  # Open the log files.
-  logs = {}
-  for name, path in log_paths.items():
-    if args.log is sys.stderr:
-      logs[name] = sys.stderr
-    else:
-      logs[name] = open(path, 'w')
+  logs = open_logs(log_paths, args.log)
 
   input_size = estimate_filesize(args.fastq1)
   mem_req = get_mem_requirement(input_size)
@@ -228,6 +185,66 @@ def detect_non_ascii(bytes, max_test=100):
     if i >= max_test:
       return False
   return False
+
+
+def make_paths(outdir_arg, fastq1_path, suffix_arg):
+  if outdir_arg:
+    outdir = outdir_arg
+  else:
+    outdir = os.path.dirname(fastq1_path) or '.'
+  if not os.path.isdir(outdir):
+    fail('Error: Output directory {!r} does not exist.'.format(outdir))
+  if suffix_arg:
+    suffix = '.'+suffix_arg
+  else:
+    suffix = ''
+  paths = {
+    'families': os.path.join(outdir, 'families{}.tsv'.format(suffix)),
+    'refdir': os.path.join(outdir, 'refdir{}'.format(suffix)),
+    'correct_sam': os.path.join(outdir, 'correct{}.sam'.format(suffix)),
+    'families_corrected': os.path.join(outdir, 'families.corrected{}.tsv'.format(suffix)),
+    'msa': os.path.join(outdir, 'families.msa{}.tsv'.format(suffix)),
+    'sscs1': os.path.join(outdir, 'sscs{}_1.fq'.format(suffix)),
+    'sscs2': os.path.join(outdir, 'sscs{}_2.fq'.format(suffix)),
+    'duplex1': os.path.join(outdir, 'duplex{}_1.fq'.format(suffix)),
+    'duplex2': os.path.join(outdir, 'duplex{}_2.fq'.format(suffix)),
+  }
+  log_paths = {
+    'make-barcodes': os.path.join(outdir, 'make-barcodes{}.log'.format(suffix)),
+    'sort1': os.path.join(outdir, 'sort1{}.log'.format(suffix)),
+    'baralign': os.path.join(outdir, 'baralign{}.log'.format(suffix)),
+    'correct': os.path.join(outdir, 'correct{}.log'.format(suffix)),
+    'sort2': os.path.join(outdir, 'sort2{}.log'.format(suffix)),
+    'align-families': os.path.join(outdir, 'align-families{}.log'.format(suffix)),
+    'make-consensi': os.path.join(outdir, 'make-consensi{}.log'.format(suffix)),
+  }
+  return paths, log_paths
+
+
+def invalid_paths(paths, log_paths, log_arg):
+  invalid_paths = False
+  for path in list(paths.values()) + list(log_paths.values()):
+    # We won't actually write to log files if --log wasn't given.
+    if path.endswith('.log') and log_arg is sys.stderr:
+      continue
+    if not os.path.isdir(os.path.dirname(path)):
+      logging.critical('Error: Directory {!r} doesn\'t exist.'.format(os.path.dirname(path)))
+      invalid_paths = True
+    if os.path.exists(path):
+      logging.critical('Error: {!r} already exists.'.format(path))
+      invalid_paths = True
+  return invalid_paths
+
+
+def open_logs(log_paths, log_arg):
+  # Open the log files.
+  logs = {}
+  for name, path in log_paths.items():
+    if log_arg is sys.stderr:
+      logs[name] = sys.stderr
+    else:
+      logs[name] = open(path, 'w')
+  return logs
 
 
 def paste_magic(reads1, reads2):
