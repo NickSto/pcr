@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 import argparse
-import functools
 import gzip
 import logging
 import os
 import subprocess
 import sys
-import time
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -47,13 +45,12 @@ def make_argparser():
     help='make-consensi.py --min-cons-reads. Default: the make-consensi.py default.')
   params.add_argument('-Q', '--fake-phred', type=int, default=40,
     help='The PHRED score to assign to all output consensus bases.')
-  params.add_argument('-I', '--no-check-ids', action='store_true')
-  misc = parser.add_argument_group('Miscellaneous')
-  misc.add_argument('-p', '--processes', type=int, default=1,
-    help='Parallelization level. Choose the number of processes to use in baralign.sh and '
-         'align-families.py. Default: %(default)s')
-  misc.add_argument('-S', '--slurm', action='store_true')
-  misc.add_argument('-J', '--job-name')
+  params.add_argument('-I', '--no-check-ids', action='store_true',
+    help='Pass --no-check-ids to correct.py and align-families.py.')
+  params.add_argument('-p', '--processes', type=int,
+    help='align-families.py --processes. Default: the align-families.py default.')
+  params.add_argument('-t', '--threads', type=int, default=1,
+    help='baralign.sh -t. Default: %(default)s')
   log = parser.add_argument_group('Logging')
   log.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
@@ -104,18 +101,16 @@ def main(argv):
 
   input_size = estimate_filesize(args.fastq1)
   mem_req = get_mem_requirement(input_size)
-  slurmize = functools.partial(add_slurm_args, slurm=args.slurm, mem_req=mem_req,
-                               job_name=args.job_name, processes=args.processes)
 
   # The 1st pipeline.
   # $ make-barcodes.awk
   command = ['awk', '-f', os.path.join(args.dunovo_dir, 'make-barcodes.awk')]
-  logging.warning('$ '+' '.join(command))
+  logging.warning('$ {} \\'.format(' '.join(command)))
   make_barcodes = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
   with open(paths['families'], 'w') as families_file:
     # $ sort
-    command = slurmize(['sort'] + get_sort_args(mem_req, args.tempdir))
-    logging.warning('$ '+' '.join(command))
+    command = ['sort'] + get_sort_args(mem_req, args.tempdir)
+    logging.warning('  | {} > {}'.format(' '.join(command), paths['families']))
     sort = subprocess.Popen(command, stdin=make_barcodes.stdout, stdout=families_file)
     # Execute it by starting to feed data into the front of the pipeline.
     make_barcodes.stdout.close()
@@ -130,8 +125,8 @@ def main(argv):
 
   # The 2nd pipeline.
   # $ baralign.sh
-  command = slurmize([os.path.join(args.dunovo_dir, 'baralign.sh'), '-t', str(args.processes),
-                      paths['families'], paths['refdir'], paths['correct_sam']])
+  command = [os.path.join(args.dunovo_dir, 'baralign.sh'), '-t', str(args.threads),
+             paths['families'], paths['refdir'], paths['correct_sam']]
   logging.warning('$ '+' '.join(command))
   baralign = subprocess.Popen(command)
   result = baralign.wait()
@@ -140,32 +135,32 @@ def main(argv):
 
   # The 3rd pipeline.
   # $ correct.py
-  command = slurmize([os.path.join(args.dunovo_dir, 'correct.py')] + get_correct_args(**vars(args))
-                     + [paths['families'], paths['refdir']+'/barcodes.fa', paths['correct_sam']])
-  logging.warning('$ '+' '.join(command))
+  command = ([os.path.join(args.dunovo_dir, 'correct.py')] + get_correct_args(**vars(args))
+             + [paths['families'], paths['refdir']+'/barcodes.fa', paths['correct_sam']])
+  logging.warning('$ {} \\'.format(' '.join(command)))
   correct = subprocess.Popen(command, stdout=subprocess.PIPE)
   # $ sort
-  command = slurmize(['sort'] + get_sort_args(mem_req, args.tempdir))
-  logging.warning('$ '+' '.join(command))
+  command = ['sort'] + get_sort_args(mem_req, args.tempdir)
+  logging.warning('  | {} \\'.format(' '.join(command)))
   sort = subprocess.Popen(command, stdin=correct.stdout, stdout=subprocess.PIPE)
   # $ tee
   command = ['tee', '-a', paths['families_corrected']]
-  logging.warning('$ '+' '.join(command))
+  logging.warning('  | {} \\'.format(' '.join(command)))
   tee1 = subprocess.Popen(command, stdin=sort.stdout, stdout=subprocess.PIPE)
   # $ align-families.py
-  command = slurmize([os.path.join(args.dunovo_dir, 'align-families.py')]
-                     + get_align_families_args(**vars(args)))
-  logging.warning('$ '+' '.join(command))
+  command = ([os.path.join(args.dunovo_dir, 'align-families.py')]
+             + get_align_families_args(**vars(args)))
+  logging.warning('  | {} \\'.format(' '.join(command)))
   align_families = subprocess.Popen(command, stdin=tee1.stdout, stdout=subprocess.PIPE)
   # $ tee
   command = ['tee', '-a', paths['msa']]
-  logging.warning('$ '+' '.join(command))
+  logging.warning('  | {} \\'.format(' '.join(command)))
   tee2 = subprocess.Popen(command, stdin=align_families.stdout, stdout=subprocess.PIPE)
   # $ make-consensi.py
-  command = slurmize([os.path.join(args.dunovo_dir, 'make-consensi.py')]
-                     + get_make_consensi_args(**vars(args)) + ['--sscs1', paths['sscs1'], '--sscs2',
-                     paths['sscs2'], '-1', paths['duplex1'], '-2', paths['duplex2']])
-  logging.warning('$ '+' '.join(command))
+  command = ([os.path.join(args.dunovo_dir, 'make-consensi.py')]
+             + get_make_consensi_args(**vars(args)) + ['--sscs1', paths['sscs1'], '--sscs2',
+             paths['sscs2'], '-1', paths['duplex1'], '-2', paths['duplex2']])
+  logging.warning('  | '+' '.join(command))
   make_consensi = subprocess.Popen(command, stdin=tee2.stdout)
   # Kick it off by closing the first stdout (don't ask me).
   correct.stdout.close()
@@ -233,23 +228,10 @@ def get_mem_requirement(filesize):
   return round(gigs*3.5)
 
 
-def add_slurm_args(command_line, slurm=False, mem_req=0, job_name=None, processes=1):
-  if not slurm:
-    return command_line
-  command = command_line[0]
-  slurm_args = ['srun', '-C', 'new']
-  if job_name:
-    slurm_args.extend(['-J', job_name+':'+command])
-  if mem_req > 2:
-    slurm_args.extend(['--mem', '{}G'.format(mem_req)])
-  if os.path.basename(command) in ('baralign.sh', 'align-families.py', 'align_families.py'):
-    slurm_args.extend(['-c', str(processes)])
-  return slurm_args + command_line
-
-
 def get_sort_args(mem_req, tempdir):
   args = []
   if mem_req >= 2:
+    logging.info('Telling sort to use a {}GB memory space.'.format(mem_req))
     args.extend(['-S', '{}G'.format(mem_req)])
   if tempdir:
     args.extend(['-T', tempdir])
