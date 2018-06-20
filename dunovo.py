@@ -91,13 +91,32 @@ def main(argv):
     'duplex1': os.path.join(outdir, 'duplex{}_1.fq'.format(suffix)),
     'duplex2': os.path.join(outdir, 'duplex{}_2.fq'.format(suffix)),
   }
+  log_paths = {
+    'make-barcodes': os.path.join(outdir, 'make-barcodes{}.log'.format(suffix)),
+    'sort1': os.path.join(outdir, 'sort1{}.log'.format(suffix)),
+    'baralign': os.path.join(outdir, 'baralign{}.log'.format(suffix)),
+    'correct': os.path.join(outdir, 'correct{}.log'.format(suffix)),
+    'sort2': os.path.join(outdir, 'sort2{}.log'.format(suffix)),
+    'align-families': os.path.join(outdir, 'align-families{}.log'.format(suffix)),
+    'make-consensi': os.path.join(outdir, 'make-consensi{}.log'.format(suffix)),
+  }
   existing_paths = False
-  for path in paths.values():
+  for path in list(paths.values()) + list(log_paths.values()):
+    # We won't actually write to log files if --log wasn't given.
+    if path.endswith('.log') and args.log is sys.stderr:
+      continue
     if os.path.exists(path):
       existing_paths = True
       logging.critical('Error: {!r} already exists.'.format(path))
   if existing_paths:
     return 1
+  # Open the log files.
+  logs = {}
+  for name, path in log_paths.items():
+    if args.log is sys.stderr:
+      logs[name] = sys.stderr
+    else:
+      logs[name] = open(path, 'w')
 
   input_size = estimate_filesize(args.fastq1)
   mem_req = get_mem_requirement(input_size)
@@ -105,13 +124,15 @@ def main(argv):
   # The 1st pipeline.
   # $ make-barcodes.awk
   command = ['awk', '-f', os.path.join(args.dunovo_dir, 'make-barcodes.awk')]
-  logging.warning('$ {} \\'.format(' '.join(command)))
-  make_barcodes = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+  logging.warning('$ {} 2> {} \\'.format(' '.join(command), logs['make-barcodes'].name))
+  make_barcodes = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=logs['make-barcodes'])
   with open(paths['families'], 'w') as families_file:
     # $ sort
     command = ['sort'] + get_sort_args(mem_req, args.tempdir)
-    logging.warning('  | {} > {}'.format(' '.join(command), paths['families']))
-    sort = subprocess.Popen(command, stdin=make_barcodes.stdout, stdout=families_file)
+    logging.warning('  | {} 2> {} > {}'.format(' '.join(command), logs['sort1'].name, paths['families']))
+    sort = subprocess.Popen(command, stdin=make_barcodes.stdout, stdout=families_file,
+                            stderr=logs['sort1'])
     # Execute it by starting to feed data into the front of the pipeline.
     make_barcodes.stdout.close()
     for columns in paste_magic(args.fastq1, args.fastq2):
@@ -130,8 +151,8 @@ def main(argv):
   if args.threads:
     command.insert(1, '-t')
     command.insert(2, str(args.threads))
-  logging.warning('$ '+' '.join(command))
-  baralign = subprocess.Popen(command)
+  logging.warning('$ {} 2> {}'.format(' '.join(command), logs['baralign'].name))
+  baralign = subprocess.Popen(command, stderr=logs['baralign'])
   result = baralign.wait()
   if result != 0:
     fail('Error: Process exited with code {}: $ {}'.format(result, ' '.join(baralign.args)))
@@ -140,12 +161,12 @@ def main(argv):
   # $ correct.py
   command = ([os.path.join(args.dunovo_dir, 'correct.py')] + get_correct_args(**vars(args))
              + [paths['families'], paths['refdir']+'/barcodes.fa', paths['correct_sam']])
-  logging.warning('$ {} \\'.format(' '.join(command)))
-  correct = subprocess.Popen(command, stdout=subprocess.PIPE)
+  logging.warning('$ {} 2> {} \\'.format(' '.join(command), logs['correct'].name))
+  correct = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=logs['correct'])
   # $ sort
   command = ['sort'] + get_sort_args(mem_req, args.tempdir)
-  logging.warning('  | {} \\'.format(' '.join(command)))
-  sort = subprocess.Popen(command, stdin=correct.stdout, stdout=subprocess.PIPE)
+  logging.warning('  | {} 2> {} \\'.format(' '.join(command), logs['sort2'].name))
+  sort = subprocess.Popen(command, stdin=correct.stdout, stdout=subprocess.PIPE, stderr=logs['sort2'])
   # $ tee
   command = ['tee', '-a', paths['families_corrected']]
   logging.warning('  | {} \\'.format(' '.join(command)))
@@ -153,8 +174,9 @@ def main(argv):
   # $ align-families.py
   command = ([os.path.join(args.dunovo_dir, 'align-families.py')]
              + get_align_families_args(**vars(args)))
-  logging.warning('  | {} \\'.format(' '.join(command)))
-  align_families = subprocess.Popen(command, stdin=tee1.stdout, stdout=subprocess.PIPE)
+  logging.warning('  | {} 2> {} \\'.format(' '.join(command), logs['align-families'].name))
+  align_families = subprocess.Popen(command, stdin=tee1.stdout, stdout=subprocess.PIPE,
+                                    stderr=logs['align-families'])
   # $ tee
   command = ['tee', '-a', paths['msa']]
   logging.warning('  | {} \\'.format(' '.join(command)))
@@ -163,8 +185,8 @@ def main(argv):
   command = ([os.path.join(args.dunovo_dir, 'make-consensi.py')]
              + get_make_consensi_args(**vars(args)) + ['--sscs1', paths['sscs1'], '--sscs2',
              paths['sscs2'], '-1', paths['duplex1'], '-2', paths['duplex2']])
-  logging.warning('  | '+' '.join(command))
-  make_consensi = subprocess.Popen(command, stdin=tee2.stdout)
+  logging.warning('  | {} 2> {}'.format(' '.join(command), logs['make-consensi'].name))
+  make_consensi = subprocess.Popen(command, stdin=tee2.stdout, stderr=logs['make-consensi'])
   # Kick it off by closing the first stdout (don't ask me).
   correct.stdout.close()
   # Check return codes.
