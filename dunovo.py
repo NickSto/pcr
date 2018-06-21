@@ -52,8 +52,8 @@ def make_argparser():
   params.add_argument('-t', '--threads', type=int,
     help='baralign.sh -t. Default: the baralign.sh default.')
   log = parser.add_argument_group('Logging')
-  log.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
-    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+  log.add_argument('-l', '--log-dir',
+    help='Write log output to files in this directory instead of to stderr.')
   volume = log.add_mutually_exclusive_group()
   volume.add_argument('--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
     default=logging.WARNING)
@@ -67,13 +67,16 @@ def main(argv):
   parser = make_argparser()
   args = parser.parse_args(argv[1:])
 
-  logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
+  # Configure logging.
+  make_log_dir(args.log_dir)
+  stream = make_main_log_stream(args.log_dir, args.suffix)
+  logging.basicConfig(stream=stream, level=args.volume, format='%(message)s')
 
   # Create and check output paths.
-  paths, log_paths = make_paths(args.outdir, args.fastq1.name, args.suffix)
-  if invalid_paths(paths, log_paths, args.log):
+  paths, log_paths = make_paths(args.outdir, args.log_dir, args.fastq1.name, args.suffix)
+  if invalid_paths(paths, log_paths, args.log_dir):
     return 1
-  logs = open_logs(log_paths, args.log)
+  logs = open_logs(log_paths)
 
   input_size = estimate_filesize(args.fastq1)
   mem_req = get_mem_requirement(input_size)
@@ -190,45 +193,76 @@ def detect_non_ascii(bytes, max_test=100):
   return False
 
 
-def make_paths(outdir_arg, fastq1_path, suffix_arg):
+def make_log_dir(log_dir):
+  if log_dir is None or os.path.isdir(log_dir):
+    return False
+  elif os.path.exists(log_dir):
+    fail('Error: {!r} exists but is not a directory.'.format(log_dir))
+  else:
+    parent_dir = os.path.dirname(log_dir)
+    if not os.path.isdir(parent_dir):
+      fail('Error: {!r} does not exist or is not a directory.'.format(parent_dir))
+    os.mkdir(log_dir, mode=0o775)
+    return True
+
+
+def make_main_log_stream(log_dir, suffix_arg):
+  if log_dir is None:
+    return sys.stderr
+  else:
+    if suffix_arg:
+      suffix = '.'+suffix_arg
+    else:
+      suffix = ''
+    main_log_path = os.path.join(log_dir, 'dunovo{}.log'.format(suffix))
+    return open(main_log_path, 'w')
+
+
+def make_paths(outdir_arg, log_dir, fastq1_path, suffix_arg):
   if outdir_arg:
     outdir = outdir_arg
   else:
     outdir = os.path.dirname(fastq1_path) or '.'
-  if not os.path.isdir(outdir):
-    fail('Error: Output directory {!r} does not exist.'.format(outdir))
   if suffix_arg:
     suffix = '.'+suffix_arg
   else:
     suffix = ''
-  paths = {
-    'families': os.path.join(outdir, 'families{}.tsv'.format(suffix)),
-    'refdir': os.path.join(outdir, 'refdir{}'.format(suffix)),
-    'correct_sam': os.path.join(outdir, 'correct{}.sam'.format(suffix)),
-    'families_corrected': os.path.join(outdir, 'families.corrected{}.tsv'.format(suffix)),
-    'msa': os.path.join(outdir, 'families.msa{}.tsv'.format(suffix)),
-    'sscs1': os.path.join(outdir, 'sscs{}_1.fq'.format(suffix)),
-    'sscs2': os.path.join(outdir, 'sscs{}_2.fq'.format(suffix)),
-    'duplex1': os.path.join(outdir, 'duplex{}_1.fq'.format(suffix)),
-    'duplex2': os.path.join(outdir, 'duplex{}_2.fq'.format(suffix)),
+  output_templates = {
+    'families': 'families{}.tsv',
+    'refdir': 'refdir{}',
+    'correct_sam': 'correct{}.sam',
+    'families_corrected': 'families.corrected{}.tsv',
+    'msa': 'families.msa{}.tsv',
+    'sscs1': 'sscs{}_1.fq',
+    'sscs2': 'sscs{}_2.fq',
+    'duplex1': 'duplex{}_1.fq',
+    'duplex2': 'duplex{}_2.fq',
   }
-  log_paths = {
-    'make-barcodes': os.path.join(outdir, 'make-barcodes{}.log'.format(suffix)),
-    'sort1': os.path.join(outdir, 'sort1{}.log'.format(suffix)),
-    'baralign': os.path.join(outdir, 'baralign{}.log'.format(suffix)),
-    'correct': os.path.join(outdir, 'correct{}.log'.format(suffix)),
-    'sort2': os.path.join(outdir, 'sort2{}.log'.format(suffix)),
-    'align-families': os.path.join(outdir, 'align-families{}.log'.format(suffix)),
-    'make-consensi': os.path.join(outdir, 'make-consensi{}.log'.format(suffix)),
+  log_templates = {
+    'make-barcodes': 'make-barcodes{}.log',
+    'sort1': 'sort1{}.log',
+    'baralign': 'baralign{}.log',
+    'correct': 'correct{}.log',
+    'sort2': 'sort2{}.log',
+    'align-families': 'align-families{}.log',
+    'make-consensi': 'make-consensi{}.log',
   }
-  return paths, log_paths
+  output_paths = {}
+  for name, template in output_templates.items():
+    output_paths[name] = os.path.join(outdir, template.format(suffix))
+  log_paths = {}
+  for name, template in log_templates.items():
+    if log_dir:
+      log_paths[name] = os.path.join(log_dir, template.format(suffix))
+    else:
+      log_paths[name] = None
+  return output_paths, log_paths
 
 
-def invalid_paths(paths, log_paths, log_arg):
+def invalid_paths(paths, log_paths, log_dir):
   invalid_paths = False
   for path in list(paths.values()) + list(log_paths.values()):
-    # We won't actually write to log files if --log wasn't given.
-    if path.endswith('.log') and log_arg is sys.stderr:
+    if path is None:
       continue
     if not os.path.isdir(os.path.dirname(path)):
       logging.critical('Error: Directory {!r} doesn\'t exist.'.format(os.path.dirname(path)))
@@ -239,11 +273,11 @@ def invalid_paths(paths, log_paths, log_arg):
   return invalid_paths
 
 
-def open_logs(log_paths, log_arg):
+def open_logs(log_paths):
   # Open the log files.
   logs = {}
   for name, path in log_paths.items():
-    if log_arg is sys.stderr:
+    if path is None:
       logs[name] = sys.stderr
     else:
       logs[name] = open(path, 'w')
@@ -264,9 +298,9 @@ def paste_magic(reads1, reads2):
 def estimate_filesize(file_obj):
   size = os.path.getsize(file_obj.name)
   if file_obj.type == 'gzip':
-    logging.warning('Input is gzip. Tripling estimated filesize from {}.'.format(size, size*3))
+    logging.info('Input is gzip. Tripling estimated filesize from {}.'.format(size, size*3))
     size = size * 3
-  logging.warning('Estimated filesize: {} bytes'.format(size))
+  logging.info('Estimated filesize: {} bytes'.format(size))
   return size
 
 
