@@ -28,8 +28,7 @@ function main {
       j) job_name="$OPTARG";;
       s) slurm=true;;
       D) debug='-D';;
-      h) fail "$Usage";;
-      ?) fail "$Usage";;
+      [h?]) fail "$Usage";;
     esac
   done
   command="${@:$OPTIND:1}"

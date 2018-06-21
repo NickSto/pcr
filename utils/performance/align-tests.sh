@@ -29,8 +29,7 @@ function main {
       V) old_version="$OPTARG";;
       s) slurm='-s';;
       D) debug='-D';;
-      h) fail "$Usage";;
-      ?) fail "$Usage";;
+      [h?]) fail "$Usage";;
     esac
   done
   infile="${@:$OPTIND:1}"

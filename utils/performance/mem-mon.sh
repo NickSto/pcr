@@ -28,14 +28,14 @@ function main {
   id=
   sleep="$SleepDefault"
   debug=
-  while getopts ":k:p:i:s:Dh" opt; do
+  while getopts "k:p:i:s:Dh" opt; do
     case "$opt" in
       k) key="$OPTARG";;
       p) ppid="$OPTARG";;
       i) id="$OPTARG";;
       s) sleep="$OPTARG";;
       D) debug=true;;
-      h) fail "$Usage";;
+      [h?]) fail "$Usage";;
     esac
   done
   command_args=${@:$OPTIND}

@@ -32,14 +32,14 @@ function main {
   invariant="$InvariantDefault"
   mem_arg=
   tmp_arg=
-  while getopts ":t:i:S:T:vh" opt; do
+  while getopts "t:i:S:T:vh" opt; do
     case "$opt" in
       t) taglen="$OPTARG";;
       i) invariant="$OPTARG";;
       S) mem_arg="-S $OPTARG";;
       T) tmp_arg="-T '$OPTARG'";;
       v) version && return;;
-      h) fail "$Usage";;
+      [h?]) fail "$Usage";;
     esac
   done
   # Get positionals.
