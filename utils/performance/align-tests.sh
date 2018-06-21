@@ -127,10 +127,15 @@ function main {
     done
   done
 
-  print_newly_finished "$unfinished"
+  # Wait for last jobs to finish, and print their results.
+  while [[ $(count_elements "$unfinished") -gt 0 ]]; do
+    sleep 60
+    print_newly_finished "$unfinished"
+    unfinished=$(get_unfinished "$stats_files")
+  done
 
   # Clean up.
-  for stats_file in $unfinished; do
+  for stats_file in $stats_files; do
     rm "$stats_file"
   done
   indir=$(dirname "$infile")
