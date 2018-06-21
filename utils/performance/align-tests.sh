@@ -110,7 +110,8 @@ function main {
           job_name="align$workers$age$i$algorithm"
           if [[ "$slurm" ]]; then
             # Hack to make the command arguments unique, even between replicates.
-            infile_alias="$infile.$RANDOM.tsv"
+            blob=$(head -c 15 /dev/urandom | base64)
+            infile_alias="$infile.$blob"
             ln -s "$(basename "$infile")" "$infile_alias"
           fi
           # Execute the command via the monitoring script.
