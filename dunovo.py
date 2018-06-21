@@ -27,18 +27,18 @@ def make_argparser():
          'containing this script (%(default)s).')
   io.add_argument('-T', '--tempdir')
   params = parser.add_argument_group('Algorithm parameters')
-  params.add_argument('-D', '--dist', type=int,
-    help='correct.py --dist. Default: the correct.py default.')
-  params.add_argument('-m', '--mapq', type=int,
-    help='correct.py --mapq. Default: the correct.py default.')
+  params.add_argument('-D', '--dist', type=int, default=3,
+    help='correct.py --dist. Default: %(default)s')
+  params.add_argument('-m', '--mapq', type=int, default=25,
+    help='correct.py --mapq. Default: %(default)s')
   params.add_argument('-P', '--pos', type=int,
     help='correct.py --pos. Default: the correct.py default.')
   params.add_argument('-a', '--aligner', choices=('mafft', 'kalign'), default='kalign',
     help='align-families.py --aligner. Default: %(default)s')
   params.add_argument('-r', '--min-reads', type=int,
     help='make-consensi.py --min-reads. Default: the make-consensi.py default.')
-  params.add_argument('-q', '--qual', type=int,
-    help='make-consensi.py --qual. Default: the make-consensi.py default.')
+  params.add_argument('-q', '--qual', type=int, default=25,
+    help='make-consensi.py --qual. Default: %(default)s')
   params.add_argument('-c', '--cons-thres', type=float, default=0.7,
     help='make-consensi.py --cons-thres. Default: %(default)s.')
   params.add_argument('-C', '--min-cons-reads', type=int,
