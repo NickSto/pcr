@@ -28,18 +28,18 @@ function main {
     version
     return
   fi
-  taglen=$TagLenDefault
-  invariant=$InvariantDefault
+  taglen="$TagLenDefault"
+  invariant="$InvariantDefault"
   mem_arg=
   tmp_arg=
   while getopts ":t:i:S:T:vh" opt; do
     case "$opt" in
-      t) taglen=$OPTARG;;
-      i) invariant=$OPTARG;;
+      t) taglen="$OPTARG";;
+      i) invariant="$OPTARG";;
       S) mem_arg="-S $OPTARG";;
       T) tmp_arg="-T '$OPTARG'";;
-      h) fail "$Usage";;
       v) version && return;;
+      h) fail "$Usage";;
     esac
   done
   # Get positionals.
@@ -61,12 +61,12 @@ Error: Must provide two input fastq files."
   if [[ "$fq1_is_gzip" ]] && [[ "$fq2_is_gzip" ]]; then
     paste <(gunzip -c "$fastq1") <(gunzip -c "$fastq2") \
       | paste - - - - \
-      | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN=$taglen -v INVARIANT=$invariant \
+      | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN="$taglen" -v INVARIANT="$invariant" \
       | sort $mem_arg $tmp_arg
   elif ! [[ "$fq1_is_gzip" ]] && ! [[ "$fq2_is_gzip" ]]; then
     paste "$fastq1" "$fastq2" \
       | paste - - - - \
-      | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN=$taglen -v INVARIANT=$invariant \
+      | awk -f "$script_dir/make-barcodes.awk" -v TAG_LEN="$taglen" -v INVARIANT="$invariant" \
       | sort $mem_arg $tmp_arg
   else
     fail "Error: Both fastq's must be either gzipped or not. No mixing is allowed."
