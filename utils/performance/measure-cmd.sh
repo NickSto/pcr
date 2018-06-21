@@ -7,6 +7,17 @@ set -ue
 
 SlurmPrefix='srun --exclusive'
 Usage="Usage: \$ $(basename "$0") [options] command [command args]
+Measure the resources used by a command and all of its children.
+Prints 8 tab-delimited columns:
+0. The -i argument, if given.
+1. ps %CPU: The maximum percentage of CPU used at any one time.
+2. ps %MEM: The maximum percentage of RAM used at any one time.
+3. ps  VSZ: The maximum virtual memory size (in KB) used at any one time.
+4. ps  RSS: The maximum resident set size (in KB) used at any one time.
+5. time -f %e: Total number of elapsed wall clock seconds.
+6. time -f %S: Total CPU-seconds used by the kernel on behalf of the command.
+7. time -f %U: Total CPU-seconds of user-mode execution time.
+8. time -f %M: Maximum resident set size in KB.
 -i: A string that will be prepended to the output as the first column.
 -o: Output file. The command's stdout will be piped here. Default: /dev/null
 -s: Run under slurm. Prefixes the command with $SlurmPrefix.
