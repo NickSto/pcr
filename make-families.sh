@@ -38,7 +38,7 @@ function main {
       i) invariant=$OPTARG;;
       S) mem_arg="-S $OPTARG";;
       T) tmp_arg="-T '$OPTARG'";;
-      h) fail "$USAGE";;
+      h) fail "$Usage";;
       v) version && return;;
     esac
   done
