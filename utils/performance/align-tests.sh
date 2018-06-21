@@ -14,15 +14,17 @@ function main {
 
   # Get arguments.
   max_parallel="$MaxParallelDefault"
+  tempdir=$(dirname $(mktemp -u))
   new_path="$NewPathDefault"
   old_path="$OldPathDefault"
   new_version=
   old_version=
   slurm=
   debug=
-  while getopts "m:p:P:v:V:i:sDh" opt; do
+  while getopts "m:t:p:P:v:V:i:sDh" opt; do
     case "$opt" in
       m) max_parallel="$OPTARG";;
+      t) tempdir="$OPTARG";;
       p) new_path="$OPTARG";;
       P) old_path="$OPTARG";;
       v) new_version="$OPTARG";;
@@ -105,8 +107,8 @@ function main {
           sleep 5
           # Create instance-specific names.
           id="align.$age.$algorithm.$workers.$i"
-          outfile=$(tempfile --prefix "out." --suffix .gz)
-          stats_file=$(tempfile --prefix "stats." --suffix .tsv)
+          outfile=$(mktemp "$tempdir/out.$id.XXXX.gz")
+          stats_file=$(mktemp "$tempdir/stats.$id.XXXX.tsv")
           job_name="align$workers$age$i$algorithm"
           if [[ "$slurm" ]]; then
             # Hack to make the command arguments unique, even between replicates.
