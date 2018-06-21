@@ -3,7 +3,7 @@ if [ x$BASH = x ] || [ ! $BASH_VERSINFO ] || [ $BASH_VERSINFO -lt 4 ]; then
   echo "Error: Must use bash version 4+." >&2
   exit 1
 fi
-set -ue
+set -ue -o pipefail
 
 TagLenDefault=12
 InvariantDefault=5
