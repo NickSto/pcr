@@ -119,7 +119,7 @@ function main {
           job_name="align$workers$age$i$algorithm"
           if [[ "$slurm" ]]; then
             # Hack to make the command arguments unique, even between replicates.
-            blob=$(head -c 15 /dev/urandom | base64)
+            blob=$(head -c 15 /dev/urandom | base64 | tr -d /+)
             infile_alias="$infile.$blob"
             ln -s "$(basename "$infile")" "$infile_alias"
           fi
