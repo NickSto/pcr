@@ -14,6 +14,7 @@ function main {
 
   # Get arguments.
   max_parallel="$MaxParallelDefault"
+  log=
   tempdir=$(dirname $(mktemp -u))
   new_path="$NewPathDefault"
   old_path="$OldPathDefault"
@@ -21,9 +22,10 @@ function main {
   old_version=
   slurm=
   debug=
-  while getopts "m:t:p:P:v:V:i:sDh" opt; do
+  while getopts "m:lt:p:P:v:V:i:sDh" opt; do
     case "$opt" in
       m) max_parallel="$OPTARG";;
+      l) log=true;;
       t) tempdir="$OPTARG";;
       p) new_path="$OPTARG";;
       P) old_path="$OPTARG";;
@@ -109,6 +111,11 @@ function main {
           id="align.$age.$algorithm.$workers.$i"
           outfile=$(mktemp "$tempdir/out.$id.XXXX.gz")
           stats_file=$(mktemp "$tempdir/stats.$id.XXXX.tsv")
+          if [[ "$log" ]]; then
+            log_file="$tempdir/$id.log"
+          else
+            log_file=/dev/null
+          fi
           job_name="align$workers$age$i$algorithm"
           if [[ "$slurm" ]]; then
             # Hack to make the command arguments unique, even between replicates.
@@ -119,7 +126,8 @@ function main {
           # Execute the command via the monitoring script.
           echo "Running $age script using $algorithm and $workers workers (replicate $i).." >&2
           "$measure_cmd" $debug -i "$id" $slurm -S "--exclusive -c $workers -J $job_name" \
-            -o "$outfile" python "$path/$script_name" -p "$workers" $algo_args "$infile_alias" \
+            -o "$outfile" -l "$log_file" \
+            python "$path/$script_name" -p "$workers" $algo_args "$infile_alias" \
             > "$stats_file" &
           stats_files="$stats_files $stats_file"
           unfinished="$unfinished $stats_file"

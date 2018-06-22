@@ -19,6 +19,7 @@ Prints 8 tab-delimited columns:
 8. time -f %M: Maximum resident set size in KB.
 -i: A string that will be prepended to the output as the first column.
 -o: Output file. The command's stdout will be piped here. Default: /dev/null
+-l: Log file. The command's stderr will be piped here. Default: /dev/null
 -s: Run under slurm. Prefixes the command with \"srun\".
 -S: Arguments to give the slurm \"srun\" command.
 -D: Turn on debug mode."
@@ -28,13 +29,15 @@ function main {
   # Get arguments.
   id=
   outfile=/dev/null
+  logfile=/dev/null
   slurm=
   slurm_args=
   debug=
-  while getopts "i:o:sS:Dh" opt; do
+  while getopts "i:o:l:sS:Dh" opt; do
     case "$opt" in
       i) id="$OPTARG";;
       o) outfile="$OPTARG";;
+      l) logfile="$OPTARG";;
       s) slurm=true;;
       S) slurm_args="$OPTARG";;
       D) debug='-D';;
@@ -97,7 +100,7 @@ function main {
   $monitor_prefix "$script_dir/mem-mon.sh" $debug $monitor_selector > "$mem_file" &
 
   # Run the actual command.
-  $slurm_cmd "$time_cmd" -f '%e\t%S\t%U\t%M' -o "$time_file" "$command" $command_args 2>/dev/null \
+  $slurm_cmd "$time_cmd" -f '%e\t%S\t%U\t%M' -o "$time_file" "$command" $command_args 2> "$logfile" \
     | gzip -c - > "$outfile"
 
   # Wait for the memory monitoring script to register that the command finished.
