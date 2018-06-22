@@ -118,8 +118,9 @@ function main {
           fi
           # Execute the command via the monitoring script.
           echo "Running $age script using $algorithm and $workers workers (replicate $i).." >&2
-          "$measure_cmd" $debug -i "$id" $slurm -j "$job_name" -o "$outfile" \
-            python "$path/$script_name" -p "$workers" $algo_args "$infile_alias" > "$stats_file" &
+          "$measure_cmd" $debug -i "$id" $slurm -S "--exclusive -c $workers -J $job_name" \
+            -o "$outfile" python "$path/$script_name" -p "$workers" $algo_args "$infile_alias" \
+            > "$stats_file" &
           stats_files="$stats_files $stats_file"
           unfinished="$unfinished $stats_file"
         done
