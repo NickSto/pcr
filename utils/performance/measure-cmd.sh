@@ -58,7 +58,6 @@ function main {
     fail "Error: Path invalid: $outfile"
   fi
 
-  job_args=
   if [[ "$slurm" ]]; then
     if ! which srun >/dev/null 2>/dev/null; then
       fail "Error: srun command not found. Turn off slurm with -S."
@@ -73,9 +72,6 @@ function main {
     done
     if [[ "$debug" ]]; then
       echo "Launching command on $node" >&2
-    fi
-    if [[ "$job_name" ]]; then
-      job_args="-J $job_name"
     fi
     if ! [[ -d ~/tmp ]]; then
       mkdir ~/tmp
