@@ -5,7 +5,6 @@ if [ "x$BASH" = x ] || [ ! "$BASH_VERSINFO" ] || [ "$BASH_VERSINFO" -lt 4 ]; the
 fi
 set -ue
 
-SlurmPrefix='srun --exclusive'
 Usage="Usage: \$ $(basename "$0") [options] command [command args]
 Measure the resources used by a command and all of its children.
 Prints 8 tab-delimited columns:
@@ -20,8 +19,8 @@ Prints 8 tab-delimited columns:
 8. time -f %M: Maximum resident set size in KB.
 -i: A string that will be prepended to the output as the first column.
 -o: Output file. The command's stdout will be piped here. Default: /dev/null
--s: Run under slurm. Prefixes the command with $SlurmPrefix.
--j: Job name for slurm.
+-s: Run under slurm. Prefixes the command with \"srun\".
+-S: Arguments to give the slurm \"srun\" command.
 -D: Turn on debug mode."
 
 function main {
@@ -29,15 +28,15 @@ function main {
   # Get arguments.
   id=
   outfile=/dev/null
-  job_name=
   slurm=
+  slurm_args=
   debug=
-  while getopts "i:o:j:sDh" opt; do
+  while getopts "i:o:sS:Dh" opt; do
     case "$opt" in
       i) id="$OPTARG";;
       o) outfile="$OPTARG";;
-      j) job_name="$OPTARG";;
       s) slurm=true;;
+      S) slurm_args="$OPTARG";;
       D) debug='-D';;
       [h?]) fail "$Usage";;
     esac
@@ -78,13 +77,13 @@ function main {
     if ! [[ -d ~/tmp ]]; then
       mkdir ~/tmp
     fi
-    slurm_args="$SlurmPrefix -w $node $job_args"
+    slurm_cmd="srun -w $node $slurm_args"
     monitor_prefix="ssh $node"
     monitor_selector="$command $command_args"
     time_file=$(tempfile -d ~/tmp --prefix time. --suffix .tsv)
     mem_file=$(tempfile -d ~/tmp --prefix mem. --suffix .tsv)
   else
-    slurm_args=
+    slurm_cmd=
     monitor_prefix=
     monitor_selector="-p $$"
     time_file=$(tempfile --prefix time. --suffix .tsv)
@@ -98,7 +97,7 @@ function main {
   $monitor_prefix "$script_dir/mem-mon.sh" $debug $monitor_selector > "$mem_file" &
 
   # Run the actual command.
-  $slurm_args "$time_cmd" -f '%e\t%S\t%U\t%M' -o "$time_file" "$command" $command_args 2>/dev/null \
+  $slurm_cmd "$time_cmd" -f '%e\t%S\t%U\t%M' -o "$time_file" "$command" $command_args 2>/dev/null \
     | gzip -c - > "$outfile"
 
   # Wait for the memory monitoring script to register that the command finished.
