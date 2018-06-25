@@ -95,9 +95,8 @@ def main(argv):
                             stderr=logs['sort1'])
     # Execute it by starting to feed data into the front of the pipeline.
     make_barcodes.stdout.close()
-    for columns in paste_magic(args.fastq1, args.fastq2):
-      line = '\t'.join(columns)+'\n'
-      make_barcodes.stdin.write(bytes(line, 'utf8'))
+    for line in paste_magic(args.fastq1, args.fastq2):
+      make_barcodes.stdin.write(line)
     make_barcodes.stdin.close()
   for process in (make_barcodes, sort):
     result = process.wait()
@@ -154,6 +153,8 @@ def main(argv):
     result = process.wait()
     if result != 0:
       fail('Error: Process exited with code {}: $ {}'.format(result, ' '.join(process.args)))
+
+  #TODO: Add trimming step.
 
 
 def open_as_text_or_gzip(path):
@@ -292,7 +293,8 @@ def paste_magic(reads1, reads2):
     columns[line_type*2] = line1.rstrip('\r\n')
     columns[(line_type*2)+1] = line2.rstrip('\r\n')
     if line_type == 3:
-      yield columns
+      line = '\t'.join(columns)+'\n'
+      yield bytes(line, 'utf8')
 
 
 def estimate_filesize(file_obj):
