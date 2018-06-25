@@ -303,6 +303,18 @@ function precheck {
 }
 
 
+function dunovo {
+  echo -e "\t${FUNCNAME[0]}:\tdunovo.py ::: families.raw_[12].fq"
+  mkdir "$dirname/dunovo.tmp"
+  if ! local_prefix=$(_get_local_prefix "$cmd_prefix" dunovo.py); then return 1; fi
+  "${local_prefix}dunovo.py" "$dirname/families.raw_1.fq" "$dirname/families.raw_2.fq" -I \
+    -l "$dirname/dunovo.tmp/logs" -o "$dirname/dunovo.tmp"
+  diff -s "$dirname/families.dunovo.duplex_1.fq" "$dirname/dunovo.tmp/duplex_1.fq"
+  diff -s "$dirname/families.dunovo.duplex_2.fq" "$dirname/dunovo.tmp/duplex_2.fq"
+  rm -rf "$dirname/dunovo.tmp"
+}
+
+
 # All tests below here are considered inactive.
 all_declarations_minus_inactive=$(declare -F)
 
