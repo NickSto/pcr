@@ -308,9 +308,9 @@ function dunovo {
   mkdir "$dirname/dunovo.tmp"
   if ! local_prefix=$(_get_local_prefix "$cmd_prefix" dunovo.py); then return 1; fi
   "${local_prefix}dunovo.py" "$dirname/families.raw_1.fq" "$dirname/families.raw_2.fq" -I \
-    -l "$dirname/dunovo.tmp/logs" -o "$dirname/dunovo.tmp"
-  diff -s "$dirname/families.dunovo.duplex_1.fq" "$dirname/dunovo.tmp/duplex_1.fq"
-  diff -s "$dirname/families.dunovo.duplex_2.fq" "$dirname/dunovo.tmp/duplex_2.fq"
+    --min-length 20 -l "$dirname/dunovo.tmp/logs" -o "$dirname/dunovo.tmp"
+  diff -s "$dirname/families.dunovo.duplex_1.fq" "$dirname/dunovo.tmp/duplex.filt_1.fq"
+  diff -s "$dirname/families.dunovo.duplex_2.fq" "$dirname/dunovo.tmp/duplex.filt_2.fq"
   rm -rf "$dirname/dunovo.tmp"
 }
 

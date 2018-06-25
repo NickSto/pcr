@@ -51,6 +51,14 @@ def make_argparser():
     help='align-families.py --processes. Default: the align-families.py default.')
   params.add_argument('-t', '--threads', type=int,
     help='baralign.sh -t. Default: the baralign.sh default.')
+  params.add_argument('-b', '--filt-bases', default='N',
+    help='trimmer.py --filt-bases. Default: %(default)s')
+  params.add_argument('-e', '--thres', type=float, default=0.3,
+    help='trimmer.py --thres. Default: %(default)s')
+  params.add_argument('-w', '--window', type=int, default=10,
+    help='trimmer.py --window. Default: %(default)s')
+  params.add_argument('-M', '--min-length', type=int, default=75,
+    help='trimmer.py --min-length. Default: %(default)s')
   log = parser.add_argument_group('Logging')
   log.add_argument('-l', '--log-dir',
     help='Write log output to files in this directory instead of to stderr.')
@@ -140,7 +148,16 @@ def main(argv):
   ]
   run_pipeline(steps)
 
-  #TODO: Add trimming step.
+  # The 4th pipeline.
+  steps = [
+    {  # $ trimmer.py
+      'command': ([os.path.join(args.dunovo_dir, 'bfx/trimmer.py'), '--format', 'fastq']
+                  + get_trimmer_args(**vars(args)) + [paths['duplex1'], paths['duplex2'],
+                   paths['dupfilt1'], paths['dupfilt2']]),
+      'stderr': logs['trimmer']
+    }
+  ]
+  run_pipeline(steps)
 
 
 def open_as_text_or_gzip(path):
@@ -224,6 +241,8 @@ def make_paths(outdir_arg, log_dir, fastq1_path, suffix_arg):
     'sscs2': 'sscs{}_2.fq',
     'duplex1': 'duplex{}_1.fq',
     'duplex2': 'duplex{}_2.fq',
+    'dupfilt1': 'duplex.filt{}_1.fq',
+    'dupfilt2': 'duplex.filt{}_2.fq',
   }
   log_templates = {
     'make-barcodes': 'make-barcodes{}.log',
@@ -233,6 +252,7 @@ def make_paths(outdir_arg, log_dir, fastq1_path, suffix_arg):
     'sort2': 'sort2{}.log',
     'align-families': 'align-families{}.log',
     'make-consensi': 'make-consensi{}.log',
+    'trimmer': 'trimmer{}.log',
   }
   output_paths = {}
   for name, template in output_templates.items():
@@ -323,6 +343,11 @@ def get_make_consensi_args(fake_phred=40, **kwargs):
   arg_list = ('min_reads', 'qual', 'cons_thres', 'min_cons_thres')
   args = ['--fastq-out', str(fake_phred)]
   return args + get_generic_args(arg_list, (), kwargs)
+
+
+def get_trimmer_args(**kwargs):
+  arg_list = ('filt_bases', 'thres', 'window', 'min_length')
+  return get_generic_args(arg_list, (), kwargs)
 
 
 def get_generic_args(arg_list, flag_list, kwargs):
