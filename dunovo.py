@@ -82,77 +82,63 @@ def main(argv):
   mem_req = get_mem_requirement(input_size)
 
   # The 1st pipeline.
-  # $ make-barcodes.awk
-  command = ['awk', '-f', os.path.join(args.dunovo_dir, 'make-barcodes.awk')]
-  logging.warning('$ {} 2> {} \\'.format(' '.join(command), logs['make-barcodes'].name))
-  make_barcodes = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=logs['make-barcodes'])
-  with open(paths['families'], 'w') as families_file:
-    # $ sort
-    command = ['sort'] + get_sort_args(mem_req, args.tempdir)
-    logging.warning('  | {} 2> {} > {}'.format(' '.join(command), logs['sort1'].name, paths['families']))
-    sort = subprocess.Popen(command, stdin=make_barcodes.stdout, stdout=families_file,
-                            stderr=logs['sort1'])
-    # Execute it by starting to feed data into the front of the pipeline.
-    make_barcodes.stdout.close()
-    for line in paste_magic(args.fastq1, args.fastq2):
-      make_barcodes.stdin.write(line)
-    make_barcodes.stdin.close()
-  for process in (make_barcodes, sort):
-    result = process.wait()
-    if result != 0:
-      fail('Error: Process exited with code {}: $ {}'.format(result, ' '.join(process.args)))
+  # $ paste
+  stdin = {'function':paste_magic, 'fxn_args':(args.fastq1, args.fastq2)}
+  steps = [
+    {  # $ make-barcodes.awk
+      'command': ('awk', '-f', os.path.join(args.dunovo_dir, 'make-barcodes.awk')),
+      'stderr': logs['make-barcodes']
+    },
+    {  # $ sort
+      'command': ['sort'] + get_sort_args(mem_req, args.tempdir),
+      'stderr': logs['sort1']
+    }
+  ]
+  run_pipeline(steps, stdin=stdin, stdout=paths['families'])
 
   # The 2nd pipeline.
-  # $ baralign.sh
-  command = [os.path.join(args.dunovo_dir, 'baralign.sh'),
-             paths['families'], paths['refdir'], paths['correct_sam']]
-  if args.threads:
-    command.insert(1, '-t')
-    command.insert(2, str(args.threads))
-  logging.warning('$ {} 2> {}'.format(' '.join(command), logs['baralign'].name))
-  baralign = subprocess.Popen(command, stderr=logs['baralign'])
-  result = baralign.wait()
-  if result != 0:
-    fail('Error: Process exited with code {}: $ {}'.format(result, ' '.join(baralign.args)))
+  steps = [
+    {  # $ baralign.sh
+      'command': (os.path.join(args.dunovo_dir, 'baralign.sh'), paths['families'], paths['refdir'],
+                  paths['correct_sam']),
+      'stderr': logs['baralign']
+    }
+  ]
+  run_pipeline(steps)
+
 
   # The 3rd pipeline.
-  # $ correct.py
-  command = ([os.path.join(args.dunovo_dir, 'correct.py')] + get_correct_args(**vars(args))
-             + [paths['families'], paths['refdir']+'/barcodes.fa', paths['correct_sam']])
-  logging.warning('$ {} 2> {} \\'.format(' '.join(command), logs['correct'].name))
-  correct = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=logs['correct'])
-  # $ sort
-  command = ['sort'] + get_sort_args(mem_req, args.tempdir)
-  logging.warning('  | {} 2> {} \\'.format(' '.join(command), logs['sort2'].name))
-  sort = subprocess.Popen(command, stdin=correct.stdout, stdout=subprocess.PIPE, stderr=logs['sort2'])
-  # $ tee
-  command = ['tee', '-a', paths['families_corrected']]
-  logging.warning('  | {} \\'.format(' '.join(command)))
-  tee1 = subprocess.Popen(command, stdin=sort.stdout, stdout=subprocess.PIPE)
-  # $ align-families.py
-  command = ([os.path.join(args.dunovo_dir, 'align-families.py')]
-             + get_align_families_args(**vars(args)))
-  logging.warning('  | {} 2> {} \\'.format(' '.join(command), logs['align-families'].name))
-  align_families = subprocess.Popen(command, stdin=tee1.stdout, stdout=subprocess.PIPE,
-                                    stderr=logs['align-families'])
-  # $ tee
-  command = ['tee', '-a', paths['msa']]
-  logging.warning('  | {} \\'.format(' '.join(command)))
-  tee2 = subprocess.Popen(command, stdin=align_families.stdout, stdout=subprocess.PIPE)
-  # $ make-consensi.py
-  command = ([os.path.join(args.dunovo_dir, 'make-consensi.py')]
-             + get_make_consensi_args(**vars(args)) + ['--sscs1', paths['sscs1'], '--sscs2',
-             paths['sscs2'], '-1', paths['duplex1'], '-2', paths['duplex2']])
-  logging.warning('  | {} 2> {}'.format(' '.join(command), logs['make-consensi'].name))
-  make_consensi = subprocess.Popen(command, stdin=tee2.stdout, stderr=logs['make-consensi'])
-  # Kick it off by closing the first stdout (don't ask me).
-  correct.stdout.close()
-  # Check return codes.
-  for process in (correct, sort, tee1, align_families, tee2, make_consensi):
-    result = process.wait()
-    if result != 0:
-      fail('Error: Process exited with code {}: $ {}'.format(result, ' '.join(process.args)))
+  steps = [
+    {  # $ correct.py
+      'command': ([os.path.join(args.dunovo_dir, 'correct.py')] + get_correct_args(**vars(args))
+                  + [paths['families'], paths['refdir']+'/barcodes.fa', paths['correct_sam']]),
+      'stderr': logs['correct']
+    },
+    {  # $ sort
+      'command': ['sort'] + get_sort_args(mem_req, args.tempdir),
+      'stderr': logs['sort2']
+    },
+    {  # $ tee
+      'command': ('tee', '-a', paths['families_corrected']),
+      'stderr': None
+    },
+    {  # $ align-families.py
+      'command': ([os.path.join(args.dunovo_dir, 'align-families.py')]
+                  + get_align_families_args(**vars(args))),
+      'stderr': logs['align-families']
+    },
+    {  # $ tee
+      'command': ('tee', '-a', paths['msa']),
+      'stderr': None
+    },
+    {  # $ make-consensi.py
+      'command': ([os.path.join(args.dunovo_dir, 'make-consensi.py')]
+                  + get_make_consensi_args(**vars(args)) + ['--sscs1', paths['sscs1'], '--sscs2',
+                  paths['sscs2'], '-1', paths['duplex1'], '-2', paths['duplex2']]),
+      'stderr': logs['make-consensi']
+    }
+  ]
+  run_pipeline(steps)
 
   #TODO: Add trimming step.
 
@@ -352,6 +338,68 @@ def get_generic_args(arg_list, flag_list, kwargs):
       flag_str = '--'+flag_name.replace('_', '-')
       args.append(flag_str)
   return args
+
+
+def run_pipeline(steps, stdin=None, stdout=None):
+  processes = []
+  fxn_stdin = False
+  for i, step in enumerate(steps):
+    cmd_str = ' '.join(step['command'])
+    kwargs = {}
+    # Determine the inputs and outputs.
+    #   stderr
+    if step['stderr']:
+      kwargs['stderr'] = step['stderr']
+      if step['stderr'] is not sys.stderr:
+        cmd_str += ' 2> '+step['stderr'].name
+    #  stdin
+    if i == 0:
+      if isinstance(stdin, str):
+        kwargs['stdin'] = open(stdin)
+        cmd_str = '$ < '+stdin+' '+cmd_str
+      elif isinstance(stdin, dict):
+        assert 'function' in stdin, stdin
+        kwargs['stdin'] = subprocess.PIPE
+        fxn_stdin = True
+        cmd_str = '$ <{}> | {}'.format(stdin['function'].__name__, cmd_str)
+      else:
+        kwargs['stdin'] = stdin
+        if hasattr(stdin, 'name'):
+          cmd_str = '< '+stdin.name+' '+cmd_str
+        cmd_str = '$ '+cmd_str
+    else:
+      kwargs['stdin'] = processes[i-1].stdout
+      cmd_str = '  | '+cmd_str
+    #   stdout
+    if i == len(steps)-1:
+      if isinstance(stdout, str):
+        kwargs['stdout'] = open(stdout, 'w')
+        cmd_str += ' > '+stdout
+      else:
+        kwargs['stdout'] = stdout
+        if hasattr(stdout, 'name'):
+          cmd_str += ' > '+stdout.name
+    else:
+      kwargs['stdout'] = subprocess.PIPE
+      cmd_str += ' \\'
+    # Create the actual process and add it to the list.
+    processes.append(subprocess.Popen(step['command'], **kwargs))
+    logging.warning(cmd_str)
+  # Kick it off by closing the first stdout (don't ask me).
+  if processes[0].stdout:
+    processes[0].stdout.close()
+  # If the input is from a function, start feeding it in.
+  if fxn_stdin:
+    function = stdin['function']
+    args = stdin['fxn_args']
+    for line in function(*args):
+      processes[0].stdin.write(line)
+    processes[0].stdin.close()
+  # Wait for all processes to finish and check their exit codes.
+  for process in processes:
+    result = process.wait()
+    if result != 0:
+      fail('Error: Process exited with code {}: $ {}'.format(result, ' '.join(process.args)))
 
 
 def fail(message):
