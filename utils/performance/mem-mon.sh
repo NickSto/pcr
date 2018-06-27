@@ -8,12 +8,19 @@ set -ue
 STAT_NAMES=(cpu mem vsz rss)
 SleepDefault=5
 DebugPrintInterval=5 # minutes
-Usage="Usage: \$ $(basename "$0") [options] [-k key | -p ppid | command arg1 arg2 etc]
+Usage="Usage: \$ $(basename "$0") [options] [-u | -k key | -p ppid | command arg1 arg2 etc]
 Monitor the resource usage of a set of processes and print the maximums.
-You must give one of:
--k: A key to find the processes. This should be one of the arguments included
-    in the command for each process.
--p: This is the pid of the parent of the processes.
+You must specify one method of selecting processes to monitor:
+-u: Monitor all processes owned by the current user ($USER).
+-k: Use this key to search for processes. This should be one of the arguments
+    included in the command for each process.
+-p: Find all processes descended from the process with this pid
+    (children, grandchildren, etc).
+Or, give a command as positional arguments to this script. It will monitor any
+processes whose command matches those arguments. You can give a partial command,
+omitting arguments at the end. If you give X arguments, it will match any
+process whose first X arguments match the ones you gave.
+Note: This script's process is always excluded.
 Options:
 -i: An id to prefix the final output line.
     If not given, this column will be omitted.
@@ -23,13 +30,15 @@ Options:
 function main {
 
   # Get arguments.
+  user=
   key=
   ppid=
   id=
   sleep="$SleepDefault"
   debug=
-  while getopts "k:p:i:s:Dh" opt; do
+  while getopts "uk:p:i:s:Dh" opt; do
     case "$opt" in
+      u) user="$USER";;
       k) key="$OPTARG";;
       p) ppid="$OPTARG";;
       i) id="$OPTARG";;
@@ -40,7 +49,7 @@ function main {
   done
   command_args=${@:$OPTIND}
 
-  if ! [[ "$key" ]] && ! [[ "$ppid" ]] && ! [[ "$command_args" ]]; then
+  if ! [[ "$user" ]] && ! [[ "$key" ]] && ! [[ "$ppid" ]] && ! [[ "$command_args" ]]; then
     fail "Error: You must provide a -k key, -p ppid, or a command."
   fi
 
@@ -57,7 +66,9 @@ function main {
   first_loop=true
   while [[ "${stats[0]}" -gt 0 ]]; do
     sleep "$sleep"
-    if [[ "$key" ]]; then
+    if [[ "$user" ]]; then
+      pids=$(get_pids_by_user "$user")
+    elif [[ "$key" ]]; then
       pids=$(get_pids_by_key "$key")
     elif [[ "$ppid" ]]; then
       pids=$(get_pids_by_ppid "$ppid")
@@ -132,6 +143,12 @@ function recursive_pgrep {
 }
 
 
+function get_pids_by_user {
+  user="$1"
+  ps aux | awk '$1 == "'"$user"'" && $2 != '"$$"' {print $2}'
+}
+
+
 function get_pids_by_key {
   key="$1"
   ps aux | awk '
@@ -181,7 +198,7 @@ function get_pids_by_cmd {
     fi
     i=$((i+1))
   done
-  ps aux | awk "\$1 == \"$USER\" && $cmd_conditionals {print \$2}"
+  ps aux | awk "\$1 == \"$USER\" && $2 != '"$$"' && $cmd_conditionals {print \$2}"
 }
 
 

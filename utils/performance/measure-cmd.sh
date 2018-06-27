@@ -20,6 +20,10 @@ Prints 8 tab-delimited columns:
 -i: A string that will be prepended to the output as the first column.
 -o: Output file. The command's stdout will be piped here. Default: /dev/null
 -l: Log file. The command's stderr will be piped here. Default: /dev/null
+-u: Select processes to monitor for ps stats (the first 4 stat columns) by
+    finding all processes matching the current user ($USER). Otherwise, if not
+    running via slurm, the processes will be found by their parent pid. If
+    running via slurm, the processes will be found by their command line.
 -s: Run under slurm. Prefixes the command with \"srun\".
 -S: Arguments to give the slurm \"srun\" command.
 -D: Turn on debug mode."
@@ -27,14 +31,16 @@ Prints 8 tab-delimited columns:
 function main {
 
   # Get arguments.
+  user=
   id=
   outfile=/dev/null
   logfile=/dev/null
   slurm=
   slurm_args=
   debug=
-  while getopts "i:o:l:sS:Dh" opt; do
+  while getopts "ui:o:l:sS:Dh" opt; do
     case "$opt" in
+      u) user="$USER";;
       i) id="$OPTARG";;
       o) outfile="$OPTARG";;
       l) logfile="$OPTARG";;
@@ -87,6 +93,10 @@ function main {
     monitor_selector="-p $$"
     time_file=$(tempfile --prefix time. --suffix .tsv)
     mem_file=$(tempfile --prefix mem. --suffix .tsv)
+  fi
+
+  if [[ "$user" ]]; then
+    monitor_selector='-u'
   fi
 
   time_cmd=$(which time)

@@ -44,7 +44,6 @@ function main {
   if ! [[ -f "$infile" ]]; then
     fail "Error: Could not find input file $infile"
   fi
-  infile_alias="$infile"
 
   # Code paths and versions.
 
@@ -118,16 +117,15 @@ function main {
           fi
           job_name="align$workers$age$i$algorithm"
           if [[ "$slurm" ]]; then
-            # Hack to make the command arguments unique, even between replicates.
-            blob=$(head -c 15 /dev/urandom | base64 | tr -d /+)
-            infile_alias="$infile.$blob"
-            ln -s "$(basename "$infile")" "$infile_alias"
+            user_arg="-u"
+          else
+            user_arg=
           fi
           # Execute the command via the monitoring script.
           echo "Running $age script using $algorithm and $workers workers (replicate $i).." >&2
-          "$measure_cmd" $debug -i "$id" $slurm -S "--exclusive -c $workers -J $job_name" \
+          "$measure_cmd" $debug -i "$id" $user_arg $slurm -S "--exclusive -c $workers -J $job_name" \
             -o "$outfile" -l "$log_file" \
-            python "$path/$script_name" -p "$workers" $algo_args "$infile_alias" \
+            python "$path/$script_name" -p "$workers" $algo_args "$infile" \
             > "$stats_file" &
           stats_files="$stats_files $stats_file"
           unfinished="$unfinished $stats_file"
