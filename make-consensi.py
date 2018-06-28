@@ -428,7 +428,7 @@ def format_outputs(dcss, sscss, barcode, output_qual=None):
     sscs_str_pair = []
     for mate in 0, 1:
       sscs = sscss.get((order, mate))
-      if sscs:
+      if sscs and sscs['seq']:
         if output_qual is None:
           sscs_str_pair.append('>{bar}.{order} {nreads}\n{seq}\n'.format(bar=barcode, **sscs))
         else:
@@ -439,7 +439,7 @@ def format_outputs(dcss, sscss, barcode, output_qual=None):
       sscs_strs[order] = sscs_str_pair
   # DCS
   dcs_strs = []
-  if dcss:
+  if dcss and all([dcs['seq'] for dcs in dcss]):
     assert len(dcss) == 2, (barcode, len(dcss))
     for duplex_mate in 0, 1:
       dcs = dcss[duplex_mate]
