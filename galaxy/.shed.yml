@@ -1,9 +1,0 @@
-categories: [Sequence Analysis]
-description: "Du Novo: A pipeline for processing duplex sequencing data."
-name: dunovo
-owner: nick
-homepage_url: https://github.com/galaxyproject/dunovo
-remote_repository_url: https://github.com/galaxyproject/dunovo
-long_description: |
-  Process raw duplex reads into duplex consensus reads without the use of a reference sequence.
-  Published in Genome Biology as Stoler et al. 2016: http://genomebiology.biomedcentral.com/articles/10.1186/s13059-016-1039-4

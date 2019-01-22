@@ -12,7 +12,7 @@ import argparse
 import collections
 # sys.path hack to access lib package in root directory.
 sys.path.insert(1, os.path.dirname(sys.path[0]))
-sys.path.insert(2, os.path.join(sys.path[1], 'lib'))
+sys.path.insert(2, os.path.join(sys.path[1], 'utillib'))
 # sys.path hack to allow overriding installed pyBamParser.
 if os.environ.get('PYTHONPATH'):
   sys.path.insert(1, os.environ.get('PYTHONPATH'))
