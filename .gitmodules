@@ -1,6 +1,3 @@
 [submodule "lib"]
 	path = utillib
 	url = https://github.com/NickSto/utillib.git
-[submodule "bfx"]
-	path = bfx
-	url = https://github.com/NickSto/bfx.git
