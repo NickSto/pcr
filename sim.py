@@ -8,20 +8,20 @@ import copy
 import random
 import string
 import logging
-from bfx import getreads
 
 PY3 = sys.version_info[0] >= 3
 
+REVCOMP_MAP = ('acgtrymkbdhvACGTRYMKBDHV', 'tgcayrkmvhdbTGCAYRKMVHDB')
 if PY3:
-  REVCOMP_TABLE = str.maketrans('acgtrymkbdhvACGTRYMKBDHV', 'tgcayrkmvhdbTGCAYRKMVHDB')
+  REVCOMP_TABLE = str.maketrans(*REVCOMP_MAP)
 else:
-  REVCOMP_TABLE = string.maketrans('acgtrymkbdhvACGTRYMKBDHV', 'tgcayrkmvhdbTGCAYRKMVHDB')
-USAGE = """%(prog)s [options]"""
-DESCRIPTION = """Simulate a PCR experiment."""
+  REVCOMP_TABLE = {}
+  for key, value in zip(*REVCOMP_MAP):
+    REVCOMP_TABLE[ord(key)] = ord(value)
 
 
 def main(argv):
-  return 0
+  raise NotImplementedError
 
 
 #TODO: Clean up "mutation" vs "error" terminology.
