@@ -1,3 +1,0 @@
-[submodule "lib"]
-	path = utillib
-	url = https://github.com/NickSto/utillib.git
